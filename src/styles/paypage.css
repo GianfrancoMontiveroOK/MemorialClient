@@ -1,0 +1,88 @@
+.conteiner {
+  display: flex;
+  justify-content: center;
+}
+.conteiner .pay {
+  background-color: rgb(204, 181, 181);
+}
+
+.conteiner .card {
+  background-color: #ebe4d275;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  margin: 5vh;
+}
+
+.cardlogin .linklogin {
+  text-decoration: none;
+  color: rgb(33, 87, 173);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.form .item {
+  margin: 2vh;
+}
+
+.form .button {
+  margin-top: 2vh;
+  margin-bottom: 2vh;
+}
+
+/* Animación para la apertura del modal */
+@keyframes modalOpen {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Animación para el cierre del modal */
+@keyframes modalClose {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+/* Estilos del modal */
+.modal-container .MuiModal-root {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0; /* Modal oculto inicialmente */
+  transition: opacity 0.3s ease; /* Animación de desvanecimiento */
+}
+
+/* Estilo cuando el modal está abierto */
+.modal-container .MuiModal-root.MuiModal-open {
+  opacity: 1; /* Modal visible */
+  animation: modalOpen 0.5s ease-out forwards; /* Aplicar la animación de apertura */
+}
+
+/* Estilo cuando el modal está cerrado */
+.modal-container .MuiModal-root:not(.MuiModal-open) {
+  animation: modalClose 0.3s ease-out forwards; /* Animación para el cierre */
+}
+
+/* Estilo para el contenido del modal */
+.modal-content {
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.2);
+}

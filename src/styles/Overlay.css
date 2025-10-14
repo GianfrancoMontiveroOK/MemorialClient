@@ -1,0 +1,45 @@
+/* Overlay.css */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000; /* Asegúrate de que esté sobre otros elementos */
+}
+
+.circle {
+  width: 700px; /* Tamaño del círculo por defecto (pantallas grandes) */
+  height: 400px; /* Tamaño del círculo por defecto (pantallas grandes) */
+  border-radius: 12vh; /* Hace que sea un círculo */
+  background-color: transparent; /* Hacer el fondo del círculo transparente */
+  border: 3px solid rgba(255, 255, 255, 0.8); /* Borde blanco para resaltar */
+  pointer-events: none; /* Asegura que los clics pasen a través del círculo */
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.761); /* Crea el efecto de "agujero" */
+}
+
+/* Para pantallas pequeñas (por ejemplo, dispositivos móviles) */
+@media (max-width: 768px) {
+  .circle {
+    width: 300px; /* Tamaño del círculo para pantallas pequeñas */
+    height: 300px; /* Tamaño del círculo para pantallas pequeñas */
+  }
+}
+
+/* Para pantallas medianas (puedes ajustar este valor según tus necesidades) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .circle {
+    width: 300px; /* Tamaño del círculo para pantallas medianas */
+    height: 200px; /* Tamaño del círculo para pantallas medianas */
+  }
+}
+
+.overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}

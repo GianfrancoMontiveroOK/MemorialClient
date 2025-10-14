@@ -1,13 +1,46 @@
 body {
+  background-color: #dcccbb;
+  animation: gradientAnimation 10s ease infinite;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+  padding: 0;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+@keyframes hideAfterMinute {
+  0% {
+    opacity: 1; /* Visible al inicio */
+  }
+  99% {
+    opacity: 1; /* Mantener visible durante 59.9 segundos */
+  }
+  100% {
+    opacity: 0; /* Completamente invisible después de 60 segundos */
+    visibility: hidden; /* Se vuelve no visible, pero no se elimina del DOM */
+  }
+}
+
+iframe[id^=":0.container"],
+div.skiptranslate {
+  animation: hideAfterMinute 10s forwards; /* La animación dura 60 segundos */
+}
+
+.translate-widget {
+  /* Animación de aparición */
+  transition: opacity 1s ease-out, transform 1s ease-out;
+  opacity: 0; /* Inicialmente invisible */
+  transform: translateY(100%); /* Inicialmente debajo de la vista */
+}
+
+.translate-widget.visible {
+  opacity: 1;
+  transform: translateY(0); /* Desaparece hacia arriba */
+}
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
     monospace;
 }

@@ -1,0 +1,76 @@
+.layoutregister .cardconteiner {
+  background-color: #0000003f;
+  backdrop-filter: blur(20px);
+  margin-left: 20%;
+  margin-right: 20%;
+}
+
+.layoutregister {
+  justify-content: center;
+}
+
+.cardregister {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin: 5vh;
+}
+
+.cardregister .linkregister {
+  text-decoration: none;
+  color: rgb(33, 87, 173);
+}
+.formregister {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.formregister .itemregister {
+  margin-bottom: 2vh;
+}
+
+.formregister .buttonregister {
+  margin-top: 2vh;
+  margin-bottom: 2vh;
+}
+
+.layoutregister .cardregister .errorregister {
+  margin: 2px;
+}
+
+.containerHomePage {
+  background-size: cover;
+  background-position: center;
+  background-image: url("https://topadventure.com/img/2020/11/17/donde_comer_vegano_y_delicioso_en_cancun_7_restaurantes_veganos_imperdibles.jpg?__scale=w:2000,h:2000,t:2");
+}
+
+.backgroundregister {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.hero1 {
+  display: flex;
+  align-items: stretch;
+}
+
+.backgroundHero1 {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.hero1-2 {
+  align-items: stretch;
+  justify-content: center;
+  align-content: center;
+}
+@media (max-width: 650px) {
+  .layoutregister .cardconteiner {
+    background-color: #0000003f;
+    backdrop-filter: blur(20px);
+    margin-left: 5%;
+    margin-right: 5%;
+  }
+}
