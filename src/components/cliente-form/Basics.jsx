@@ -1,4 +1,3 @@
-// src/components/cliente-form/Basics.jsx
 import React from "react";
 import {
   Typography,
@@ -7,6 +6,8 @@ import {
   TextField,
   MenuItem,
   Alert,
+  FormControlLabel,
+  Switch,
 } from "@mui/material";
 
 export default function Basics({
@@ -16,6 +17,7 @@ export default function Basics({
   DOC_TIPOS,
   PROVINCIAS,
   SEXO_OPTS,
+  ROL_OPTS = ["TITULAR", "INTEGRANTE", "OTRO"],
 }) {
   return (
     <>
@@ -65,6 +67,56 @@ export default function Basics({
           </Grid>
         )}
       </Grid>
+
+      {/* Rol / Integrante solo en edición */}
+      {isEdit && (
+        <>
+          <Typography variant="h6" fontWeight={700} mt={3} mb={1}>
+            Rol en el grupo
+          </Typography>
+          <Divider sx={{ mb: 2 }} />
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={4}>
+              <TextField
+                select
+                label="Rol"
+                value={values.rol || "TITULAR"}
+                onChange={onChange("rol")}
+                fullWidth
+                helperText="TITULAR, INTEGRANTE u OTRO"
+              >
+                {ROL_OPTS.map((r) => (
+                  <MenuItem key={r} value={r}>
+                    {r}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={Boolean(values.integrante)}
+                    onChange={onChange("integrante")}
+                  />
+                }
+                label="Integrante del grupo"
+              />
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <TextField
+                label="Nombre titular (opcional)"
+                value={values.nombreTitular || ""}
+                onChange={onChange("nombreTitular")}
+                fullWidth
+                placeholder="Si este registro es integrante"
+              />
+            </Grid>
+          </Grid>
+        </>
+      )}
 
       <Typography variant="h6" fontWeight={700} mt={3} mb={1}>
         Contacto

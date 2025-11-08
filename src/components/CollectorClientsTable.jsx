@@ -1,5 +1,5 @@
 // src/components/CollectorClientsTable.jsx
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Box,
   Paper,
@@ -11,18 +11,20 @@ import {
   TableRow,
   TableCell,
   TableContainer,
-  TablePagination,
   IconButton,
   TextField,
   InputAdornment,
-  Button,
   Tooltip,
+  Chip,
+  Stack,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import VisibilityIcon from "@mui/icons-material/Visibility";
-import PaymentsIcon from "@mui/icons-material/Payments";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import MapIcon from "@mui/icons-material/Map";
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { useNavigate } from "react-router-dom";
 import { useCollector } from "../context";
 
@@ -35,61 +37,97 @@ const fmtMoney = (n) =>
       })
     : "—";
 
-const fmtDate = (d) => {
-  if (!d) return "—";
-  const dt = new Date(d);
-  return Number.isNaN(dt.getTime()) ? "—" : dt.toLocaleDateString("es-AR");
-};
+const digits = (s = "") => String(s).replace(/\D+/g, "");
+const buildAddress = (r) =>
+  [r?.domicilio, r?.ciudad, r?.provincia, r?.cp].filter(Boolean).join(", ");
 
-export default function CollectorClientsTable({ onOpenCobro }) {
+/* ---------- Helpers de estado de cobro ---------- */
+const isDueThisMonth = (b) => !!b && b.current === "due";
+const isAhead = (b) => !!b && Number(b.aheadCount || 0) > 0;
+const isOnTime = (b) =>
+  !!b &&
+  b.current === "paid" &&
+  Number(b.aheadCount || 0) === 0 &&
+  Number(b.arrearsCount || 0) === 0;
+
+/* “Faltantes x cobrar este mes” = pendientes (due) + sin datos */
+const isMissingThisMonth = (b) => !b || isDueThisMonth(b);
+
+/* Chip “Estado” por fila */
+function BillingChip({ billing }) {
+  if (!billing) {
+    return (
+      <Tooltip title="Sin datos de pago para este mes">
+        <Chip size="small" label="Pendiente" color="warning" />
+      </Tooltip>
+    );
+  }
+  if (isDueThisMonth(billing)) {
+    const atras = Number(billing.arrearsCount || 0);
+    const label = atras > 1 ? `Atraso ${atras} meses` : "Atrasado";
+    return (
+      <Tooltip
+        title={
+          billing.lastPaidPeriod
+            ? `Último pago: ${billing.lastPaidPeriod}`
+            : "Con deuda pendiente"
+        }
+      >
+        <Chip size="small" color="error" label={label} />
+      </Tooltip>
+    );
+  }
+  if (isAhead(billing)) {
+    const adel = Number(billing.aheadCount || 0);
+    const label = adel > 1 ? `Adelantado ${adel} meses` : "Adelantado";
+    return (
+      <Tooltip
+        title={
+          billing.lastPaidPeriod
+            ? `Último pago: ${billing.lastPaidPeriod}`
+            : "Cuotas adelantadas"
+        }
+      >
+        <Chip size="small" color="info" label={label} />
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip
+      title={
+        billing.lastPaidPeriod
+          ? `Último pago: ${billing.lastPaidPeriod}`
+          : "Al día"
+      }
+    >
+      <Chip size="small" color="success" label="Al día" />
+    </Tooltip>
+  );
+}
+
+export default function CollectorClientsTable() {
   const navigate = useNavigate();
-  const {
-    ctxId,
-    items,
-    total,
-    page, // UI 0-based (según tu contexto)
-    limit,
-    q,
-    loading,
-    err,
-    fetchClientsByCollector,
-    setPage,
-    setLimit,
-    setQ,
-  } = useCollector();
+  const { ctxId, items, q, loading, err, fetchClientsByCollector, setQ } =
+    useCollector();
 
   const rows = Array.isArray(items) ? items : [];
   const [localSearch, setLocalSearch] = useState(q || "");
   const [localErr, setLocalErr] = useState("");
-  const [sortDir, setSortDir] = useState("desc"); // default: más nuevos primero
+  const [sortDir, setSortDir] = useState("desc"); // más nuevos primero
   const sortBy = "createdAt";
 
-  useEffect(() => {
-    console.log("[CollectorTable ctxId]", ctxId);
-  }, [ctxId]);
+  // filtro activo: 'all' | 'missing' | 'al-dia' | 'ahead'
+  const [statusFilter, setStatusFilter] = useState("all");
 
-  useEffect(() => {
-    console.log("[CollectorTable] items changed", {
-      rowsLen: rows.length,
-      total,
-      loading,
-      first: rows[0],
-    });
-  }, [items, rows.length, total, loading]);
-
-  // sync input si q cambia externamente
   useEffect(() => {
     setLocalSearch(q || "");
   }, [q]);
 
-  // debounce de búsqueda -> actualiza q en el contexto
+  // Debounce búsqueda -> actualiza q (server-side full)
   useEffect(() => {
     const t = setTimeout(() => {
       const nextQ = String(localSearch || "").trim();
-      if (nextQ !== q) {
-        setPage(0);
-        setQ(nextQ);
-      }
+      if (nextQ !== q) setQ(nextQ);
     }, 300);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,8 +136,7 @@ export default function CollectorClientsTable({ onOpenCobro }) {
   const load = useCallback(async () => {
     try {
       await fetchClientsByCollector({
-        page, // tu contexto ya sabe si convertir a 1-based
-        limit,
+        full: 1, // trae TODO el padrón asignado (sin page/limit)
         q,
         sortBy,
         sortDir,
@@ -108,38 +145,94 @@ export default function CollectorClientsTable({ onOpenCobro }) {
       const msg = e?.response?.data?.message || e?.message || "Error al cargar";
       setLocalErr(msg);
     }
-  }, [fetchClientsByCollector, page, limit, q, sortBy, sortDir]);
+  }, [fetchClientsByCollector, q, sortBy, sortDir]);
 
-  const handleRefresh = () => {
+  useEffect(() => {
     load();
-  };
+  }, [load, ctxId]);
 
+  const handleRefresh = () => load();
   const handleToggleSort = () => {
     setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    setPage(0);
-    // disparamos una recarga luego del setState
     setTimeout(load, 0);
   };
+  const handleView = (r) =>
+    navigate(`/app/collectorClientDetail/${r._id || r.id}`);
 
-  const handleView = (r) => navigate(`/app/clientes/${r._id || r.id}`);
+  const copyAddress = (r) => {
+    const addr = buildAddress(r);
+    if (!addr) return;
+    navigator.clipboard?.writeText(addr).catch(() => {});
+  };
+  const openMaps = (r) => {
+    const addr = buildAddress(r);
+    if (!addr) return;
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      addr
+    )}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+  const openWhatsApp = (r) => {
+    const phone = digits(r?.telefono || "");
+    if (!phone) return;
+    const cuotaVig =
+      r?.cuotaVigente ?? (r?.usarCuotaIdeal ? r?.cuotaIdeal : r?.cuota) ?? 0;
+    const msg =
+      `Hola ${r?.nombre?.split(" ")[0] || ""}, te escribe *Memorial*.\n` +
+      `Tengo registrada tu cuota vigente de *${fmtMoney(
+        Number(cuotaVig)
+      )}*.\n` +
+      `¿Coordinamos el cobro a domicilio? (Cliente #${r?.idCliente ?? "—"}).`;
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
 
   const sortLabel =
     sortDir === "asc" ? "Más viejos primero" : "Más nuevos primero";
 
+  /* ---------- Contadores por estado (sobre TODO el padrón) ---------- */
+  const counts = useMemo(() => {
+    let missing = 0,
+      alDia = 0,
+      ahead = 0;
+    for (const r of rows) {
+      const b = r?.billing;
+      if (isMissingThisMonth(b)) missing++;
+      else if (isAhead(b)) ahead++;
+      else if (isOnTime(b)) alDia++;
+    }
+    return { missing, alDia, ahead, all: rows.length };
+  }, [rows]);
+
+  /* ---------- Filtrado local por chip ---------- */
+  const visibleRows = useMemo(() => {
+    if (statusFilter === "all") return rows;
+    return rows.filter((r) => {
+      const b = r?.billing;
+      if (statusFilter === "missing") return isMissingThisMonth(b);
+      if (statusFilter === "ahead") return isAhead(b);
+      if (statusFilter === "al-dia") return isOnTime(b);
+      return true;
+    });
+  }, [rows, statusFilter]);
+
+  const toggleFilter = (key) =>
+    setStatusFilter((prev) => (prev === key ? "all" : key));
+
   return (
     <Paper elevation={0} sx={{ borderRadius: 2, overflow: "hidden" }}>
-      <Toolbar sx={{ gap: 1, flexWrap: "wrap" }}>
+      <Toolbar sx={{ gap: 1, flexWrap: "wrap", alignItems: "center" }}>
         <Typography variant="h6" sx={{ fontWeight: 800 }}>
-          Mis clientes · {loading && rows.length === 0 ? "…" : total}
+          Mis clientes · {loading && rows.length === 0 ? "…" : counts.all}
         </Typography>
 
         <Box
-          sx={{ flex: 1, minWidth: 220, maxWidth: 420, ml: { xs: 0, md: 2 } }}
+          sx={{ flex: 1, minWidth: 220, maxWidth: 520, ml: { xs: 0, md: 2 } }}
         >
           <TextField
             size="small"
             fullWidth
-            placeholder="Buscar por nombre o N° cliente…"
+            placeholder="Buscar por nombre, N° cliente o domicilio…"
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
             InputProps={{
@@ -152,7 +245,6 @@ export default function CollectorClientsTable({ onOpenCobro }) {
           />
         </Box>
 
-        {/* Toggle ver más viejos / más nuevos */}
         <Tooltip title={sortLabel}>
           <span>
             <IconButton
@@ -172,16 +264,6 @@ export default function CollectorClientsTable({ onOpenCobro }) {
           </span>
         </Tooltip>
 
-        <Button
-          variant="contained"
-          size="small"
-          onClick={() =>
-            alert("Alta de cliente deshabilitada para cobradores.")
-          }
-        >
-          Nuevo (bloqueado)
-        </Button>
-
         <Tooltip title="Refrescar">
           <span>
             <IconButton onClick={handleRefresh} disabled={loading}>
@@ -195,52 +277,114 @@ export default function CollectorClientsTable({ onOpenCobro }) {
             {err || localErr}
           </Typography>
         )}
+
+        {/* Filtros/leyenda (clicables) */}
+        <Box sx={{ ml: "auto" }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Chip
+              size="small"
+              color="warning"
+              variant={statusFilter === "missing" ? "filled" : "outlined"}
+              label={`Faltantes este mes (${counts.missing})`}
+              onClick={() => toggleFilter("missing")}
+            />
+            <Chip
+              size="small"
+              color="success"
+              variant={statusFilter === "al-dia" ? "filled" : "outlined"}
+              label={`Al día (${counts.alDia})`}
+              onClick={() => toggleFilter("al-dia")}
+            />
+            <Chip
+              size="small"
+              color="info"
+              variant={statusFilter === "ahead" ? "filled" : "outlined"}
+              label={`Adelantado (${counts.ahead})`}
+              onClick={() => toggleFilter("ahead")}
+            />
+            <Chip
+              size="small"
+              color="default"
+              variant={statusFilter === "all" ? "filled" : "outlined"}
+              label={`Todos (${counts.all})`}
+              onClick={() => toggleFilter("all")}
+            />
+          </Stack>
+        </Box>
       </Toolbar>
 
       <TableContainer>
-        <Table size="small" aria-label="Tabla de clientes">
+        <Table size="small" aria-label="Tabla de clientes (cobrador)">
           <TableHead>
             <TableRow>
               <TableCell>N° Cliente</TableCell>
               <TableCell>Nombre</TableCell>
               <TableCell>Dirección</TableCell>
-              <TableCell align="right">Cuota</TableCell>
-              <TableCell>Ingreso</TableCell>
+              <TableCell>Estado</TableCell>
               <TableCell align="right">Acciones</TableCell>
             </TableRow>
           </TableHead>
+
           <TableBody>
-            {rows.length > 0 ? (
-              rows.map((r) => (
-                <TableRow hover key={r.id || r._id || r.idCliente}>
-                  <TableCell>{r.idCliente ?? "—"}</TableCell>
-                  <TableCell>{r.nombre ?? "—"}</TableCell>
-                  <TableCell>
-                    {r.domicilio ||
-                      [r.ciudad, r.provincia].filter(Boolean).join(", ") ||
-                      "—"}
-                  </TableCell>
-                  <TableCell align="right">{fmtMoney(r.cuota)}</TableCell>
-                  <TableCell>{fmtDate(r.ingreso)}</TableCell>
-                  <TableCell align="right" style={{ whiteSpace: "nowrap" }}>
-                    <IconButton
-                      size="small"
-                      title="Ver"
-                      onClick={() => handleView(r)}
-                    >
-                      <VisibilityIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      color="primary"
-                      title="Cobrar"
-                      onClick={() => onOpenCobro?.(r)}
-                    >
-                      <PaymentsIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))
+            {visibleRows.length > 0 ? (
+              visibleRows.map((r) => {
+                const cuotaVig =
+                  r?.cuotaVigente ??
+                  (r?.usarCuotaIdeal ? r?.cuotaIdeal : r?.cuota);
+                return (
+                  <TableRow hover key={r.id || r._id || r.idCliente}>
+                    <TableCell>{r.idCliente ?? "—"}</TableCell>
+                    <TableCell>{r.nombre ?? "—"}</TableCell>
+                    <TableCell>{buildAddress(r) || "—"}</TableCell>
+
+                    <TableCell>
+                      <BillingChip billing={r.billing} />
+                    </TableCell>
+
+                    <TableCell align="right" style={{ whiteSpace: "nowrap" }}>
+                      <Tooltip title="Copiar dirección">
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => copyAddress(r)}
+                          >
+                            <ContentCopyIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title="Abrir en Maps">
+                        <span>
+                          <IconButton size="small" onClick={() => openMaps(r)}>
+                            <MapIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title="WhatsApp">
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="success"
+                            onClick={() => openWhatsApp(r)}
+                            disabled={!digits(r?.telefono || "")}
+                          >
+                            <WhatsAppIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title="Ver ficha">
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleView(r)}
+                          >
+                            <VisibilityIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             ) : loading ? (
               <TableRow>
                 <TableCell colSpan={6} align="center">
@@ -275,21 +419,6 @@ export default function CollectorClientsTable({ onOpenCobro }) {
           </TableBody>
         </Table>
       </TableContainer>
-
-      <TablePagination
-        component="div"
-        rowsPerPageOptions={[10, 25, 50, 100]}
-        count={Math.max(total, rows.length)}
-        rowsPerPage={limit}
-        page={page}
-        onPageChange={(_e, newPage) => setPage(newPage)}
-        onRowsPerPageChange={(e) => {
-          const v = parseInt(e.target.value, 10);
-          setLimit(v);
-          setPage(0);
-        }}
-        labelRowsPerPage="Filas por página"
-      />
     </Paper>
   );
 }

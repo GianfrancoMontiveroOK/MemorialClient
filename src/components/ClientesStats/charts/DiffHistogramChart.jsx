@@ -2,16 +2,15 @@ import React from "react";
 import {
   Box,
   Stack,
+  Button,
   Chip,
   Typography,
-  Button,
   FormControlLabel,
   Switch,
   Tooltip as MuiTooltip,
 } from "@mui/material";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import ChartCard from "../atoms/ChartCard";
-import { labelForBucket } from "../atoms/formatters";
 import {
   ResponsiveContainer,
   BarChart,
@@ -22,30 +21,47 @@ import {
   CartesianGrid,
   Legend,
   Brush,
-  Cell, // 👈 IMPORTANTE: en mayúsculas
+  Cell,
   ReferenceLine,
 } from "recharts";
 
-/* ====== helpers ====== */
-const NEGATIVE = "#2E7D32"; // verde
-const NEUTRAL = "#4F46E5"; // índigo
-const POSITIVE = "#D32F2F"; // rojo
+/* ====== paleta y helpers de color ====== */
+// Gap = COBRADO − DEBE
+//  < 0  => faltante (rojo)         ← izquierda
+// ≈ 0   => neutro (índigo)         ~ centro
+//  > 0  => excedente (verde)       → derecha
+const RED = "#D32F2F";
+const NEUTRAL = "#4F46E5";
+const GREEN = "#2E7D32";
 const GRID = "rgba(0,0,0,0.06)";
 
-const colorForLabel = (label) => {
+/**
+ * Las etiquetas vienen del backend (p.ej. "≤-5000", "-5000 a -1000", "≈0", "100 a 500", "≥5000").
+ * Pintamos:
+ * - rojo si el rango es negativo,
+ * - índigo si es el bin neutro,
+ * - verde si es positivo.
+ */
+function colorForLabel(label) {
   const s = String(label || "");
-  if (s.includes("-") && !s.includes("0 a")) return NEGATIVE; // rangos negativos
-  if (s.startsWith("0 a")) return NEUTRAL; // bin en torno a cero
-  return POSITIVE; // resto a la derecha
-};
+  if (s.includes("≈0")) return NEUTRAL;
+  // si contiene un signo '-' y no es el bin "0 a ...", asumimos negativo
+  const looksNegativeRange =
+    s.includes("-") && !s.startsWith("0 a") && !s.includes(" a 0");
+  if (looksNegativeRange || s.includes("≤-")) return RED;
+  // el resto lo consideramos positivo
+  return GREEN;
+}
 
+/* Back devuelve: [{ _id: bucketLabel, count }] */
 const preprocess = (raw) =>
   (Array.isArray(raw) ? raw : []).map((b) => ({
     id: b._id,
-    label: labelForBucket(b._id),
+    label: String(b._id ?? ""),
     count: Number(b.count || 0),
   }));
 
+/* ===== CSV helpers ===== */
 const toCSV = (rows) => {
   const headers = ["label", "count", "value", "mode", "cumulative"];
   const esc = (s) => `"${String(s ?? "").replaceAll('"', '""')}"`;
@@ -67,12 +83,20 @@ const download = (name, text) => {
   URL.revokeObjectURL(url);
 };
 
-/* ====== tooltip ====== */
+/* ===== Tooltip custom ===== */
 function CustomTooltip({ active, payload, label, mode, cumulative }) {
   if (!active || !payload || !payload.length) return null;
   const p = payload[0];
   const value = Number(p?.value ?? p?.payload?.value ?? 0);
   const count = Number(p?.payload?.count ?? 0);
+
+  // Mensaje contextual
+  const hint = label.includes("≈0")
+    ? "sin faltante"
+    : label.includes("-")
+    ? "faltante (cobrado < debe)"
+    : "excedente (cobrado > debe)";
+
   return (
     <Box
       sx={{
@@ -81,16 +105,17 @@ function CustomTooltip({ active, payload, label, mode, cumulative }) {
         bgcolor: "#0b1020",
         color: "#e8ecff",
         border: "1px solid rgba(255,255,255,0.16)",
+        maxWidth: 280,
       }}
     >
       <Typography variant="caption" sx={{ opacity: 0.8 }}>
-        Rango
+        Rango de gap (Cobrado − Debe)
       </Typography>
-      <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
-        {label}
+      <Typography variant="body2" fontWeight={700} sx={{ mb: 0.25 }}>
+        {label} · {hint}
       </Typography>
       <Typography variant="body2">
-        Valor:{" "}
+        {mode === "percent" ? "Porcentaje" : "Conteo"}:{" "}
         <strong>
           {mode === "percent"
             ? `${value.toFixed(2)} %`
@@ -98,7 +123,7 @@ function CustomTooltip({ active, payload, label, mode, cumulative }) {
         </strong>
       </Typography>
       <Typography variant="body2">
-        Conteo: <strong>{count.toLocaleString("es-AR")}</strong>
+        Casos: <strong>{count.toLocaleString("es-AR")}</strong>
       </Typography>
       {cumulative && (
         <Typography variant="caption" sx={{ opacity: 0.8 }}>
@@ -109,7 +134,7 @@ function CustomTooltip({ active, payload, label, mode, cumulative }) {
   );
 }
 
-/* ====== componente ====== */
+/* ===== Componente ===== */
 export default function DiffHistogramChart({
   data = [],
   scopeLabel = "Todos los activos",
@@ -161,15 +186,15 @@ export default function DiffHistogramChart({
       cumulative,
     }));
     download(
-      `histograma_${mode}${cumulative ? "_acumulado" : ""}.csv`,
+      `histograma_gap_${mode}${cumulative ? "_acumulado" : ""}.csv`,
       toCSV(rows)
     );
   };
 
   return (
     <ChartCard
-      title="Distribución de Δ (Ideal − Cobro)"
-      subtitle="Cuántos grupos caen en cada rango de diferencia. Barras a la derecha sugieren subfacturación."
+      title="Distribución del gap (Cobrado − Debe)"
+      subtitle="Izquierda: faltante (rojo). Derecha: excedente (verde). El centro sugiere cobertura ~100%."
       right={<Chip size="small" label={scopeLabel} />}
     >
       {/* Controles */}
@@ -199,7 +224,9 @@ export default function DiffHistogramChart({
           }
           label="Acumulado"
         />
+
         <Box sx={{ flex: 1 }} />
+
         <MuiTooltip title={empty ? "No hay datos" : "Exportar CSV"}>
           <span>
             <Button
@@ -216,7 +243,6 @@ export default function DiffHistogramChart({
       </Stack>
 
       {/* Chart */}
-      {/* 👇 Aseguramos altura explícita para ResponsiveContainer */}
       <Box sx={{ height: 320 }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
@@ -231,15 +257,25 @@ export default function DiffHistogramChart({
               height={50}
               tickMargin={8}
             />
-            <YAxis tick={{ fontSize: 12 }} />
+            <YAxis
+              tick={{ fontSize: 12 }}
+              label={{
+                value: mode === "percent" ? "Porcentaje" : "Conteo",
+                angle: -90,
+                position: "insideLeft",
+                offset: 8,
+                fill: "#6B7280",
+                fontSize: 11,
+              }}
+            />
             <Legend
               verticalAlign="top"
               align="right"
               wrapperStyle={{ paddingBottom: 6 }}
               payload={[
-                { value: "Rango negativo", type: "square", color: NEGATIVE },
-                { value: "Neutro", type: "square", color: NEUTRAL },
-                { value: "Rango positivo", type: "square", color: POSITIVE },
+                { value: "Faltante (negativo)", type: "square", color: RED },
+                { value: "Neutro (~0)", type: "square", color: NEUTRAL },
+                { value: "Excedente (positivo)", type: "square", color: GREEN },
               ]}
             />
             <ReferenceLine y={0} stroke="#999" strokeDasharray="3 3" />
@@ -248,7 +284,6 @@ export default function DiffHistogramChart({
               content={<CustomTooltip mode={mode} cumulative={cumulative} />}
             />
 
-            {/* ✅ SOLO UN <Bar> y celdas en MAYÚSCULA */}
             <Bar
               dataKey="value"
               name={mode === "percent" ? "Porcentaje" : "Conteo"}
@@ -258,7 +293,6 @@ export default function DiffHistogramChart({
               ))}
             </Bar>
 
-            {/* Brush para elegir rangos de bins */}
             <Brush
               dataKey="label"
               height={20}
@@ -276,14 +310,13 @@ export default function DiffHistogramChart({
         </ResponsiveContainer>
       </Box>
 
-      {/* Nota */}
       <Typography
         variant="caption"
         color="text.secondary"
         sx={{ display: "block", mt: 1 }}
       >
-        Tip: activá “%” para comparar distribuciones aunque cambie el tamaño del
-        padrón.
+        Tip: activá “%” para comparar períodos con distinto padrón. El bin
+        central “≈0” representa grupos con cobertura cercana al 100%.
       </Typography>
     </ChartCard>
   );

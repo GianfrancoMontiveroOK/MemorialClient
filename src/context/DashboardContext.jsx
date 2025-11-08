@@ -6,11 +6,7 @@ import {
   useEffect,
   useCallback,
 } from "react";
-import {
-  getDashboardData,
-  getAdminStats,
-  getCollectorStats,
-} from "../api/dashboard";
+import { getDashboardAccess } from "../api/dashboard";
 import { useAuth } from "./AuthContext";
 
 const DashboardContext = createContext();
@@ -25,104 +21,74 @@ export const useDashboard = () => {
 export const DashboardProvider = ({ children, autoLoad = true }) => {
   const { user, isAuthenticated } = useAuth();
 
-  const [data, setData] = useState(null);
   const [role, setRole] = useState(user?.role ?? null);
+  const [flags, setFlags] = useState({
+    isSuperAdmin: false,
+    isAdmin: false,
+    isCollector: false,
+  });
+  const [data, setData] = useState(null); // compat
   const [loading, setLoading] = useState(Boolean(autoLoad));
   const [error, setError] = useState(null);
 
+  /** Comparación de rol case-insensitive */
   const hasRole = useCallback(
     (roles) => {
-      const currentRole = (role || user?.role || "").toString();
-      if (!currentRole) return false;
-      const allowed = Array.isArray(roles) ? roles : [roles];
-      return allowed.includes(currentRole);
+      const current = String(role || user?.role || "").toLowerCase();
+      if (!current) return false;
+      const list = Array.isArray(roles) ? roles : [roles];
+      return list.map((r) => String(r).toLowerCase()).includes(current);
     },
     [role, user]
   );
 
-  const normalizePayload = useCallback(
-    (res) => {
-      const base = res?.data ?? res ?? {};
-      const normalizedRole = base?.role ?? user?.role ?? role ?? null;
-      const normalizedData = base?.data ?? base ?? null;
-      return { role: normalizedRole, data: normalizedData };
-    },
-    [role, user]
-  );
-
+  /** Carga única: sólo valida acceso y setea role/flags */
   const fetchDashboard = useCallback(async () => {
     if (!isAuthenticated) return;
-
     setLoading(true);
     setError(null);
     try {
-      let res;
-      if (hasRole("superAdmin")) {
-        res = await getDashboardData();
-      } else if (hasRole("admin")) {
-        res = await getAdminStats();
-      } else if (hasRole("cobrador")) {
-        res = await getCollectorStats();
-      } else {
-        throw new Error("Rol no autorizado");
-      }
-
-      const { role: apiRole, data: apiData } = normalizePayload(res);
-      setRole(apiRole ?? null);
-      setData(apiData ?? null);
+      const res = await getDashboardAccess();
+      const r = String(res?.data?.role || "").toLowerCase();
+      const f = res?.data?.flags || {};
+      setRole(r || null);
+      setFlags({
+        isSuperAdmin: !!f.isSuperAdmin,
+        isAdmin: !!f.isAdmin,
+        isCollector: !!f.isCollector,
+      });
+      setData(null); // sin payload pesado aquí
     } catch (err) {
       const msg =
         err?.response?.data?.message ||
         err?.message ||
-        "Error al cargar el dashboard";
+        "Error al validar acceso";
       setError(msg);
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, hasRole, normalizePayload]);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (autoLoad) fetchDashboard();
   }, [autoLoad, fetchDashboard]);
 
-  // ====== Clientes desde el payload del dashboard ======
-  const fetchClients = useCallback(async (params = {}) => {
-    const {
-      page = 0,
-      pageSize = 10,
-      sortBy = "idCliente", // 👈 CAMBIO HECHO AQUÍ
-      sortDir = "asc",
-      query = "",
-    } = params;
-
-    const res = await getDashboardData({
-      params: {
-        page: page + 1, // la API usa 1-based
-        limit: pageSize,
-        sortBy,
-        sortDir,
-        q: query,
-      },
-    });
-
-    const clientes = res?.data?.data?.clientes ?? {};
-    console.log(clientes);
-    return {
-      items: clientes.items || [],
-      total: clientes.total || 0,
-    };
+  /** Stub de compatibilidad: devuelve vacío (puedes removerlo cuando no se use) */
+  const fetchClients = useCallback(async () => {
+    return { items: [], total: 0 };
   }, []);
 
   return (
     <DashboardContext.Provider
       value={{
         role,
-        data,
+        flags,
+        data, // compat
         loading,
         error,
         hasRole,
         refresh: fetchDashboard,
-        fetchClients,
+        fetchClients, // compat
       }}
     >
       {children}

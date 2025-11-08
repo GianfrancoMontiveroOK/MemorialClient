@@ -121,9 +121,9 @@ export default function HeroCarousel({
                 maxWidth: { xs: "100%", md: 720 },
               }}
             >
-              Junto a vos en tus
+              El más bello homenaje
               <br />
-              momentos más difíciles
+              para los que amamos
             </Typography>
           </motion.div>
 

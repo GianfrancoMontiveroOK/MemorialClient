@@ -1,61 +1,78 @@
-// src/pages/DashboardHome.jsx
+// src/pages/DashboardPage.jsx
 import React from "react";
+import { Box, CircularProgress, Typography } from "@mui/material";
 import {
-  useDashboard,
   useAuth,
+  useDashboard,
+  SettingsProvider,
   ClientsProvider,
   UsersProvider,
+  TransactionsProvider,
+  ReceiptsProvider,
   CollectorProvider,
-  SettingsProvider, // ← NUEVO
 } from "../context";
 
-// Panels
+// Panels (ajustá rutas si tus archivos están en otra carpeta)
 import AdminPanel from "../components/AdminPanel";
 import SuperAdminPanel from "../components/SuperAdminPanel";
 import CollectorPanel from "../components/CollectorPanel";
-// import { createCollectorPayment } from "../api/collector"; // cuando implementes pagos reales
 
-export default function DashboardHome() {
-  const { data, loading, error, hasRole } = useDashboard();
+export default function DashboardPage() {
+  // Estos vienen dados por los providers globales que ya montás en App.jsx (AuthProvider + DashboardProvider)
   const { user } = useAuth();
+  const { data, loading, error, hasRole } = useDashboard();
 
-  if (loading) return <p>Cargando…</p>;
-  if (error) return <p>Error: {String(error)}</p>;
-  if (!user) return <p>Cargando usuario…</p>; // defensa suave
+  if (loading) {
+    return (
+      <Box p={3} display="flex" alignItems="center" gap={2}>
+        <CircularProgress size={22} />
+        <Typography variant="body2">Cargando dashboard…</Typography>
+      </Box>
+    );
+  }
+  if (error) {
+    return (
+      <Box p={3}>
+        <Typography color="error">Error: {String(error)}</Typography>
+      </Box>
+    );
+  }
+  if (!user) {
+    return (
+      <Box p={3}>
+        <Typography>Autenticando…</Typography>
+      </Box>
+    );
+  }
 
-  const collectorId = user?.idCobrador ?? null;
+  // Contenido por rol (se renderizan los que apliquen)
+  const content = (
+    <>
+      {hasRole("superAdmin") && <SuperAdminPanel data={data} />}
+      {hasRole("admin") && <AdminPanel data={data} />}
+      {hasRole("cobrador") && <CollectorPanel />}
+    </>
+  );
 
+  // Si el usuario es cobrador, envolvemos con CollectorProvider
+  const maybeWithCollector = hasRole("cobrador") ? (
+    <CollectorProvider>{content}</CollectorProvider>
+  ) : (
+    content
+  );
+
+  // Montamos los contextos que usan las secciones del panel (configs, abm clientes, usuarios,
+  // transacciones e infraestructura de recibos). Así SuperAdminPanel/AdminPanel/CollectorPanel
+  // no necesitan montar providers propios.
   return (
-    <div>
-      {/* SUPER ADMIN */}
-      {hasRole("superAdmin") && (
-        <SettingsProvider>
-          <ClientsProvider>
-            <UsersProvider>
-              <SuperAdminPanel data={data} />
-            </UsersProvider>
-          </ClientsProvider>
-        </SettingsProvider>
-      )}
-
-      {/* ADMIN */}
-      {hasRole("admin") && (
-        <ClientsProvider>
-          <UsersProvider>
-            <AdminPanel data={data} />
-          </UsersProvider>
-        </ClientsProvider>
-      )}
-
-      {/* COBRADOR */}
-      {hasRole("cobrador") && (
-        <CollectorProvider
-          collectorId={collectorId}
-          // createPaymentFn={createCollectorPayment}
-        >
-          <CollectorPanel />
-        </CollectorProvider>
-      )}
-    </div>
+    <SettingsProvider>
+      <ClientsProvider>
+        <UsersProvider>
+          <TransactionsProvider>
+            <ReceiptsProvider>{maybeWithCollector}</ReceiptsProvider>
+          </TransactionsProvider>
+        </UsersProvider>
+      </ClientsProvider>
+    </SettingsProvider>
   );
 }

@@ -119,7 +119,7 @@ export default function UsuariosPanel({
 
   return (
     <Box>
-      <Typography variant="h5" fontWeight={700} mb={2}>
+          <Typography variant="h4" fontWeight={700} textTransform= "uppercase">
         Usuarios
       </Typography>
 

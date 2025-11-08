@@ -23,8 +23,8 @@ export function buildPalette(mode = "light") {
     warning:   { main: c.brandYellow },
     info:      { main: c.brandLila },
     text: {
-      primary:   isDark ? c.white : c.black,
-      secondary: isDark ? "#C0C5CC" : "#5A6166",
+      primary:   isDark ? c.white : "#000",
+      secondary: isDark ? "#C0C5CC" : "#1C1818",
     },
     background: {
       default: isDark ? "#231C1C" : "#F7F7F7",

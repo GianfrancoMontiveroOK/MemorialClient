@@ -1,3 +1,4 @@
+// src/components/SuperAdminPanel.jsx
 import React from "react";
 import {
   Box,
@@ -12,16 +13,49 @@ import { useNavigate } from "react-router-dom";
 import { useUsers } from "../context/UsersContext";
 import { useDashboard } from "../context/DashboardContext";
 
-import AdminSidebar, { SECTIONS, DRAWER_WIDTH } from "./admin/AdminSidebar";
+// Sidebar
+import AdminSidebar, {
+  SECTIONS,
+  DRAWER_WIDTH,
+} from "../components/admin/AdminSidebar";
 
-// Secciones
-import ResumenSection from "./admin/sections/ResumenSection";
+// Secciones existentes
 import ClientesSection from "./admin/sections/ClientesSection";
-import PagosSection from "./admin/sections/PagosSection";
 import UsuariosSection from "./admin/sections/UsuariosSection";
 import EstadisticasSection from "./admin/sections/EstadisticasSection";
-// NUEVO: Settings en página
 import SettingsSection from "./admin/sections/SettingsSection";
+import TransactionsSection from "./admin/sections/TransactionsSection";
+import LedgerSection from "./admin/sections/LedgerSection";
+import OutboxSection from "./admin/sections/OutboxSection";
+import AuditSection from "./admin/sections/AuditSection";
+import ReceiptsSection from "./admin/sections/ReceiptsSection";
+
+// ⬇️ ARQUEOS + DETALLE
+import ArqueosSection from "./admin/sections/ArqueosSection";
+import CollectorDetailSection from "./admin/sections/CollectorDetailSection"; // <- verifica esta ruta
+
+// Claves visibles en sidebar
+const ALLOWED_KEYS = [
+  "clientes",
+  "transacciones",
+  "diario",
+  "outbox",
+  "recibos",
+  "usuarios",
+  "auditoria",
+  "estadisticas",
+  "settings",
+  "arqueos",
+];
+
+// Claves internas (no aparecen en sidebar)
+const INTERNAL_KEYS = ["collector-detail"];
+
+const FIRST_ALLOWED = "clientes";
+const sanitizeSection = (key) =>
+  ALLOWED_KEYS.includes(key) || INTERNAL_KEYS.includes(key)
+    ? key
+    : FIRST_ALLOWED;
 
 export default function SuperAdminPanel() {
   const {
@@ -32,6 +66,7 @@ export default function SuperAdminPanel() {
     fetchClients,
     deleteClient,
   } = useDashboard();
+
   const {
     items,
     total,
@@ -48,9 +83,20 @@ export default function SuperAdminPanel() {
   const navigate = useNavigate();
 
   const [mobileOpen, setMobileOpen] = React.useState(false);
-  const [section, setSection] = React.useState("clientes");
+  const [section, setSection] = React.useState(FIRST_ALLOWED);
+
+  // === Estado para drilldown de Arqueos ===
+  const [selectedCollector, setSelectedCollector] = React.useState(null);
+  const [detailFilters, setDetailFilters] = React.useState({
+    dateFrom: "",
+    dateTo: "",
+  });
 
   const toggleDrawer = () => setMobileOpen((v) => !v);
+
+  React.useEffect(() => {
+    setSection((prev) => sanitizeSection(prev));
+  }, []);
 
   if (loadingDashboard) {
     return (
@@ -69,8 +115,7 @@ export default function SuperAdminPanel() {
     return (
       <Box textAlign="center" p={4}>
         <Typography variant="h6" color="error" gutterBottom>
-          {" "}
-          Error al cargar datos{" "}
+          Error al cargar datos
         </Typography>
         <Typography variant="body2" color="text.secondary">
           {String(error)}
@@ -81,13 +126,27 @@ export default function SuperAdminPanel() {
 
   const payload = data?.data ? data.data : data || {};
   const resumen = payload?.resumen || {};
-  const recientes = payload?.recientes || {};
-  const ultimosPagos = Array.isArray(recientes?.ultimosPagos)
-    ? recientes.ultimosPagos
-    : [];
-  const ultimosUsuarios = Array.isArray(recientes?.ultimosUsuarios)
-    ? recientes.ultimosUsuarios
-    : [];
+
+  // Label actual (incluye sección interna)
+  const currentLabel =
+    SECTIONS.find((s) => s.key === section)?.label ||
+    (section === "collector-detail" ? "Detalle del cobrador" : "Panel");
+
+  // Handler que recibe ArqueosSection
+  const openCollectorDetail = ({ user, dateFrom, dateTo }) => {
+    setSelectedCollector(user || null);
+    setDetailFilters({
+      dateFrom: dateFrom || "",
+      dateTo: dateTo || "",
+    });
+    setSection("collector-detail");
+  };
+
+  const goBackFromDetail = () => {
+    setSection("arqueos");
+    // si querés limpiar la selección al volver:
+    // setSelectedCollector(null);
+  };
 
   return (
     <Box sx={{ display: "flex" }}>
@@ -114,9 +173,11 @@ export default function SuperAdminPanel() {
           <AdminSidebar
             section={section}
             onChange={(s) => {
-              setSection(s);
+              setSection(sanitizeSection(s));
               setMobileOpen(false);
             }}
+            // opcional: si tu Sidebar acepta filtro de claves visibles
+            filterKeys={ALLOWED_KEYS}
           />
         </Drawer>
 
@@ -133,7 +194,11 @@ export default function SuperAdminPanel() {
           open
         >
           <Toolbar />
-          <AdminSidebar section={section} onChange={setSection} />
+          <AdminSidebar
+            section={section}
+            onChange={(s) => setSection(sanitizeSection(s))}
+            filterKeys={ALLOWED_KEYS}
+          />
         </Drawer>
       </Box>
 
@@ -158,21 +223,11 @@ export default function SuperAdminPanel() {
             <MenuRoundedIcon />
           </IconButton>
           <Typography variant="h6" fontWeight={700}>
-            {SECTIONS.find((s) => s.key === section)?.label || "Panel"}
+            {currentLabel}
           </Typography>
         </Box>
 
-       
-
-        {/* Secciones */}
-        {section === "resumen" && (
-          <ResumenSection
-            resumen={resumen}
-            ultimosPagos={ultimosPagos}
-            ultimosUsuarios={ultimosUsuarios}
-          />
-        )}
-
+        {/* Secciones visibles */}
         {section === "clientes" && (
           <ClientesSection
             fetchClients={fetchClients}
@@ -195,7 +250,10 @@ export default function SuperAdminPanel() {
           />
         )}
 
-        {section === "pagos" && <PagosSection />}
+        {section === "transacciones" && <TransactionsSection />}
+        {section === "diario" && <LedgerSection />}
+        {section === "outbox" && <OutboxSection />}
+        {section === "auditoria" && <AuditSection />}
 
         {section === "usuarios" && (
           <UsuariosSection
@@ -220,9 +278,23 @@ export default function SuperAdminPanel() {
         )}
 
         {section === "estadisticas" && <EstadisticasSection />}
-
-        {/* NUEVO: Settings como sección */}
         {section === "settings" && <SettingsSection />}
+        {section === "recibos" && <ReceiptsSection />}
+
+        {/* ARQUEOS listado */}
+        {section === "arqueos" && (
+          <ArqueosSection onOpenCollectorDetail={openCollectorDetail} />
+        )}
+
+        {/* Sección interna (no en sidebar): Detalle de cobrador/admin */}
+        {section === "collector-detail" && (
+          <CollectorDetailSection
+            user={selectedCollector}
+            defaultDateFrom={detailFilters.dateFrom}
+            defaultDateTo={detailFilters.dateTo}
+            onBack={goBackFromDetail}
+          />
+        )}
       </Box>
     </Box>
   );

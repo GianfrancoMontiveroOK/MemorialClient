@@ -4,7 +4,7 @@ import { buildTypography } from "./typography";
 import { buildComponents } from "./components";
 
 export function getTheme(mode = "light") {
-  const breakpoints = { values: { xs: 0, sm: 600, md: 960, lg: 1200, xl: 1880 } };
+  const breakpoints = { values: { xs: 0, sm: 600, md: 900, lg: 1200, xl: 1880 } };
 
   let theme = createTheme({
     palette: buildPalette(mode),

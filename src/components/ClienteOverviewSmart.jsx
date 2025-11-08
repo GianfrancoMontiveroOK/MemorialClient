@@ -1,5 +1,5 @@
 // src/components/ClienteOverviewSmart.jsx
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Box,
   Stack,
@@ -17,11 +17,13 @@ import {
   TableCell,
   TableBody,
   Skeleton,
+  Snackbar,
+  Alert,
+  CircularProgress,
 } from "@mui/material";
 
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EditIcon from "@mui/icons-material/Edit";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AccountTreeRoundedIcon from "@mui/icons-material/AccountTreeRounded";
 import PaidRoundedIcon from "@mui/icons-material/PaidRounded";
 import LocalFireDepartmentOutlinedIcon from "@mui/icons-material/LocalFireDepartmentOutlined";
@@ -31,7 +33,9 @@ import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 
+import { repriceGroup } from "../api/adminPricing";
 import { fmtMoney, fmtDate, BooleanBadge, LabelValue } from "./ui";
 
 /* ---------- helpers ---------- */
@@ -50,11 +54,29 @@ export default function ClienteOverviewSmart({
   onAddIntegrante,
   onViewMember,
   onEditMember,
+
+  // opcional: refrescar luego de reprice
+  onRefresh,
 }) {
-  // Metrías de precio (SIN cuotaVigente)
-  const cobrado = isNum(item?.cuota) ? item.cuota : null;
-  const ideal = isNum(item?.cuotaIdeal) ? item.cuotaIdeal : null;
-  const desvAbs = cobrado != null && ideal != null ? cobrado - ideal : null;
+  // UI local
+  const [repriceLoading, setRepriceLoading] = useState(false);
+  const [toast, setToast] = useState({ open: false, msg: "", sev: "info" });
+  const [localPatch, setLocalPatch] = useState(null); // para reflejar cambios post-reprice
+
+  const showToast = (msg, sev = "info") => setToast({ open: true, msg, sev });
+  const closeToast = () => setToast((t) => ({ ...t, open: false }));
+
+  // Item mostrado (original + patch local post-reprice)
+  const displayItem = { ...(item || {}), ...(localPatch || {}) };
+
+  const usarIdeal = !!displayItem?.usarCuotaIdeal;
+  const cobrado = isNum(displayItem?.cuota) ? displayItem.cuota : null; // histórica
+  const ideal = isNum(displayItem?.cuotaIdeal) ? displayItem.cuotaIdeal : null;
+
+  // Cuál es la cuota VIGENTE (la que realmente se cobra hoy)
+  const vigente = usarIdeal ? ideal : cobrado;
+
+  const desvAbs = vigente != null && ideal != null ? vigente - ideal : null; // vigente - ideal
   const desvPct =
     ideal && ideal > 0 && desvAbs != null ? (desvAbs / ideal) * 100 : null;
 
@@ -62,6 +84,45 @@ export default function ClienteOverviewSmart({
     const base = Number(item?.grupoFamiliar) || 1;
     return Math.max(base, 1 + (Array.isArray(family) ? family.length : 0));
   }, [item, family]);
+
+  async function handleReprice() {
+    if (!item?.idCliente) {
+      showToast("Falta idCliente para recalcular.", "warning");
+      return;
+    }
+    try {
+      setRepriceLoading(true);
+      const { data } = await repriceGroup(item.idCliente);
+      if (data?.ok) {
+        setLocalPatch((prev) => ({
+          ...(prev || {}),
+          cuotaIdeal: isNum(data?.cuotaIdeal)
+            ? data.cuotaIdeal
+            : prev?.cuotaIdeal ?? item?.cuotaIdeal,
+          edadMaxPoliza: isNum(data?.edadMax)
+            ? data.edadMax
+            : prev?.edadMaxPoliza ?? item?.edadMaxPoliza,
+        }));
+      }
+      showToast(
+        data?.ok
+          ? `Cuota ideal recalculada: ${
+              isNum(data?.cuotaIdeal) ? fmtMoney(data.cuotaIdeal) : "—"
+            }`
+          : "Recálculo completado",
+        "success"
+      );
+      onRefresh?.();
+    } catch (e) {
+      const msg =
+        e?.response?.data?.message ||
+        e?.message ||
+        "No se pudo recalcular la cuota ideal";
+      showToast(msg, "error");
+    } finally {
+      setRepriceLoading(false);
+    }
+  }
 
   /* -------------------------------- Header -------------------------------- */
   const Header = (
@@ -100,23 +161,22 @@ export default function ClienteOverviewSmart({
           </Typography>
 
           {item?.activo ? (
-            <Chip size="small" label="Activo" color="success" />
+            <Chip label="Activo" color="success" />
           ) : (
-            <Chip size="small" label="Baja" />
+            <Chip label="Baja" />
           )}
 
           {item?.rol && (
             <Chip
-              size="small"
               icon={<BadgeRoundedIcon />}
               label={item.rol}
-              variant="outlined"
+              variant="contained"
+              color="primary"
             />
           )}
 
           {item?.tipoFactura && item.tipoFactura !== "none" && (
             <Chip
-              size="small"
               icon={<ReceiptLongRoundedIcon />}
               label={`Factura ${item.tipoFactura}`}
               variant="outlined"
@@ -125,7 +185,6 @@ export default function ClienteOverviewSmart({
 
           {item?.idCliente && (
             <Chip
-              size="small"
               color="primary"
               variant="outlined"
               icon={<AccountTreeRoundedIcon />}
@@ -134,7 +193,7 @@ export default function ClienteOverviewSmart({
           )}
         </Stack>
 
-        {/* right: acciones + importe destacado (CUOTA COBRADA) */}
+        {/* right: Cuota VIGENTE + Acciones */}
         <Stack
           direction="row"
           spacing={1}
@@ -144,9 +203,13 @@ export default function ClienteOverviewSmart({
         >
           <Chip
             size="medium"
-            color="default"
+            color={usarIdeal ? "success" : "default"}
             icon={<PaidRoundedIcon />}
-            label={cobrado != null ? fmtMoney(cobrado) : "—"}
+            label={
+              vigente != null
+                ? `Cuota vigente: ${fmtMoney(vigente)}`
+                : "Cuota vigente: —"
+            }
             sx={{
               fontWeight: 800,
               "& .MuiChip-label": { px: 1 },
@@ -164,20 +227,6 @@ export default function ClienteOverviewSmart({
                 disabled={loading || !item}
               >
                 Editar
-              </Button>
-            </span>
-          </Tooltip>
-
-          <Tooltip title="Eliminar">
-            <span>
-              <Button
-                variant="contained"
-                color="error"
-                startIcon={<DeleteOutlineIcon />}
-                onClick={onDelete}
-                disabled={loading || !item || removing}
-              >
-                Eliminar
               </Button>
             </span>
           </Tooltip>
@@ -203,6 +252,15 @@ export default function ClienteOverviewSmart({
       }}
     >
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+        {/* Modo de cobro claro */}
+        <Chip
+          size="small"
+          color={usarIdeal ? "success" : "default"}
+          variant={usarIdeal ? "filled" : "outlined"}
+          label={
+            usarIdeal ? "USANDO IDEAL (reglas)" : "USANDO HISTÓRICA (manual)"
+          }
+        />
         <Chip
           size="small"
           icon={<PersonOutlineIcon />}
@@ -211,10 +269,9 @@ export default function ClienteOverviewSmart({
         />
         <Chip
           size="small"
-          label={`Edad máx.: ${item?.edadMaxPoliza ?? "—"}`}
+          label={`Edad máx.: ${displayItem?.edadMaxPoliza ?? "—"}`}
           variant="outlined"
         />
-        {/* Flags relevantes del nuevo modelo */}
         {item?.cremacion && (
           <Chip
             size="small"
@@ -243,17 +300,6 @@ export default function ClienteOverviewSmart({
         )}
         {item?.tarjeta && (
           <Chip size="small" label="Tarjeta" color="info" variant="outlined" />
-        )}
-        {/* Si seguís guardando pisada, la mostramos informativa (no calculamos “vigente”) */}
-        {item?.usarCuotaPisada && (
-          <Chip
-            size="small"
-            label={`Pisada: ${
-              isNum(item?.cuotaPisada) ? fmtMoney(item.cuotaPisada) : "—"
-            }`}
-            color="secondary"
-            variant="outlined"
-          />
         )}
       </Stack>
     </Paper>
@@ -394,34 +440,69 @@ export default function ClienteOverviewSmart({
         <Typography variant="subtitle1" fontWeight={800}>
           Precio
         </Typography>
-        {/* Informativo si hay pisada: NO usamos “vigente” en cálculos */}
-        {item?.usarCuotaPisada ? (
-          <Chip
-            size="small"
-            label="Pisada activa"
-            color="secondary"
-            variant="outlined"
-          />
-        ) : (
-          <Chip size="small" label="Por reglas" variant="outlined" />
-        )}
+
+        {/* Modo de cobro (administrativo) */}
+        <Chip
+          size="small"
+          color={usarIdeal ? "success" : "default"}
+          variant={usarIdeal ? "filled" : "outlined"}
+          label={
+            usarIdeal ? "USANDO IDEAL (reglas)" : "USANDO HISTÓRICA (manual)"
+          }
+        />
       </Stack>
 
       <Grid container spacing={1.5}>
-        <Grid item xs={6}>
+        {/* Vigente al frente */}
+        <Grid item xs={12}>
           <LabelValue
-            label="Cuota cobrada"
-            value={cobrado != null ? fmtMoney(cobrado) : "—"}
+            label="Cuota vigente (aplicada)"
+            value={vigente != null ? fmtMoney(vigente) : "—"}
             bold
           />
         </Grid>
-        <Grid item xs={6}>
+
+        <Grid item xs={12} sm={6}>
           <LabelValue
-            label="Cuota ideal"
-            value={ideal != null ? fmtMoney(ideal) : "—"}
+            label="Cuota manual (histórica)"
+            value={cobrado != null ? fmtMoney(cobrado) : "—"}
           />
         </Grid>
 
+        <Grid item xs={12} sm={6}>
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            spacing={1}
+          >
+            <LabelValue
+              label="Cuota ideal (reglas)"
+              value={ideal != null ? fmtMoney(ideal) : "—"}
+            />
+            <Tooltip title="Recalcular cuota ideal del grupo">
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={
+                    repriceLoading ? (
+                      <CircularProgress size={16} />
+                    ) : (
+                      <ReplayRoundedIcon />
+                    )
+                  }
+                  onClick={handleReprice}
+                  disabled={loading || repriceLoading || !item?.idCliente}
+                >
+                  Recalcular
+                </Button>
+              </span>
+            </Tooltip>
+          </Stack>
+        </Grid>
+
+        {/* Traza simple */}
         <Grid item xs={12}>
           <Stack
             direction="row"
@@ -443,10 +524,14 @@ export default function ClienteOverviewSmart({
               <Chip
                 size="small"
                 label={
-                  desvAbs > 0 ? "Sub-ideal" : desvAbs < 0 ? "Sobre-ideal" : "OK"
+                  desvAbs > 0
+                    ? "Por encima del ideal"
+                    : desvAbs < 0
+                    ? "Por debajo del ideal"
+                    : "Igual al ideal"
                 }
                 color={
-                  desvAbs > 0 ? "error" : desvAbs < 0 ? "success" : "default"
+                  desvAbs > 0 ? "success" : desvAbs < 0 ? "error" : "default"
                 }
                 variant="outlined"
               />
@@ -464,7 +549,7 @@ export default function ClienteOverviewSmart({
         <Grid item xs={4}>
           <LabelValue
             label="Edad máx. póliza"
-            value={item?.edadMaxPoliza ?? "—"}
+            value={displayItem?.edadMaxPoliza ?? "—"}
           />
         </Grid>
         <Grid item xs={4}>
@@ -472,6 +557,20 @@ export default function ClienteOverviewSmart({
             <BooleanBadge label="Cremación" value={!!item?.cremacion} />
             <BooleanBadge label="Parcela" value={!!item?.parcela} />
           </Stack>
+        </Grid>
+
+        {/* Fechas útiles para auditoría */}
+        <Grid item xs={12}>
+          <Divider sx={{ my: 0.5 }} />
+        </Grid>
+        <Grid item xs={4}>
+          <LabelValue label="Vigencia" value={fmtDate(item?.vigencia)} />
+        </Grid>
+        <Grid item xs={4}>
+          <LabelValue label="F. aumento" value={fmtDate(item?.fechaAumento)} />
+        </Grid>
+        <Grid item xs={4}>
+          <LabelValue label="Actualizado" value={fmtDate(item?.updatedAt)} />
         </Grid>
       </Grid>
     </Paper>
@@ -633,6 +732,22 @@ export default function ClienteOverviewSmart({
           {FechasNotasCard}
         </Grid>
       </Grid>
+
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={4000}
+        onClose={closeToast}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={closeToast}
+          severity={toast.sev}
+          variant="filled"
+          sx={{ width: "100%" }}
+        >
+          {toast.msg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

@@ -1,4 +1,3 @@
-// src/context/ClientsContext.jsx
 import {
   createContext,
   useCallback,
@@ -30,14 +29,16 @@ const pickItem = (resp) => {
   return root?.data ?? root;
 };
 
+// ⚠️ NUEVO esquema: si usarCuotaIdeal === true => usar cuotaIdeal.
+// Si no, usar histórica (cuota). Sin pisadas.
 const computeCuotaVigenteLocal = (it) => {
-  const usarPisada = !!it?.usarCuotaPisada && it?.cuotaPisada != null;
-  const pisada = Number(it?.cuotaPisada);
+  const usarIdeal = !!it?.usarCuotaIdeal;
   const ideal = Number(it?.cuotaIdeal);
-  if (usarPisada && Number.isFinite(pisada)) return pisada;
-  if (Number.isFinite(ideal)) return ideal;
   const historica = Number(it?.cuota);
-  return Number.isFinite(historica) ? historica : 0;
+
+  if (usarIdeal && Number.isFinite(ideal)) return ideal;
+  if (Number.isFinite(historica)) return historica;
+  return 0;
 };
 
 const ensurePricingFields = (it) =>
@@ -63,7 +64,7 @@ export const ClientsProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
-  // stats globales (sin byPlan)
+  // stats globales
   const [stats, setStats] = useState(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
@@ -147,7 +148,7 @@ export const ClientsProvider = ({ children }) => {
         setErrSafe(
           e?.response?.data?.message || e?.message || "Error al listar"
         );
-        setItemsSafe([]);
+        setItemsSafe([]); // ← no romper UI
         setTotalSafe(0);
         throw e;
       } finally {
@@ -157,7 +158,7 @@ export const ClientsProvider = ({ children }) => {
     [page, pageSize, q, sortBy, sortDir]
   );
 
-  // ------ STATS (sin byPlan) ------
+  // ------ STATS ------
   const fetchStats = useCallback(async (params = {}) => {
     setLoadingStatsSafe(true);
     setErrSafe("");
@@ -240,21 +241,41 @@ export const ClientsProvider = ({ children }) => {
       setLoadingSafe(true);
       setErrSafe("");
       try {
-        const res = await getClienteById(id, opts);
+        // Por defecto, queremos groupInfo + family
+        const optExpand = opts.hasOwnProperty("expand")
+          ? String(opts.expand)
+          : "family";
+
+        const res = await getClienteById(id, { expand: optExpand });
+        const root = res?.data ?? res;
         const item = pickItem(res);
         if (!item?._id) throw new Error("Cliente no encontrado");
 
-        const enriched = ensurePricingFields({ ...item });
+        // ✅ Priorizar __groupInfo (nuevo backend), luego groupInfo
+        const groupInfo =
+          root?.__groupInfo ||
+          item?.__groupInfo ||
+          root?.groupInfo ||
+          item?.groupInfo ||
+          null;
 
-        const expandOpt = String(opts?.expand || "").toLowerCase();
+        // Enriquecer con pricing local y groupInfo (si está)
+        const enriched = ensurePricingFields({
+          ...item,
+          ...(groupInfo ? { groupInfo } : {}),
+        });
+
+        // family (si vino); si no, reconstruimos por idCliente
+        const expandOpt = String(optExpand).toLowerCase();
         const wantsFamily =
-          !Object.prototype.hasOwnProperty.call(opts, "expand") ||
           expandOpt === "family" ||
           expandOpt === "all" ||
           (expandOpt && expandOpt.split(",").includes("family"));
 
         if (wantsFamily && item?.idCliente !== undefined) {
-          let fam = res?.data?.family ?? res?.family ?? res?.__family ?? null;
+          // ✅ Orden de fuentes corregido
+          let fam = root?.family ?? res?.family ?? res?.data?.family ?? null;
+
           if (!Array.isArray(fam) || fam.length === 0) {
             fam = await loadFamilyByGroup(item.idCliente);
           } else {
@@ -262,6 +283,9 @@ export const ClientsProvider = ({ children }) => {
           }
           enriched.__family = Array.isArray(fam) ? fam : [];
         }
+
+        // ✅ Guardar también __groupInfo para la UI
+        if (groupInfo) enriched.__groupInfo = groupInfo;
 
         setCurrentSafe(enriched);
         return enriched;
@@ -298,21 +322,42 @@ export const ClientsProvider = ({ children }) => {
     try {
       const res = await updateCliente(id, payload);
       const item = ensurePricingFields(pickItem(res));
+
       setCurrentSafe((prev) => {
-        if (!prev) return prev;
+        if (!prev) return item;
         const same =
           prev._id === item?._id ||
           (prev.idCliente &&
             item?.idCliente &&
             prev.idCliente === item.idCliente);
+
+        // preservamos family y groupInfo si no vinieron en la respuesta
         const preservedFamily = Array.isArray(prev?.__family)
           ? prev.__family
           : undefined;
-        const merged = same ? ensurePricingFields({ ...prev, ...item }) : prev;
-        return preservedFamily
-          ? { ...merged, __family: preservedFamily.map(ensurePricingFields) }
-          : merged;
+        const preservedGroupInfo =
+          prev?.groupInfo || prev?.__groupInfo || undefined;
+
+        const merged = same
+          ? ensurePricingFields({
+              ...prev,
+              ...item,
+              groupInfo: item.groupInfo || preservedGroupInfo,
+            })
+          : item;
+
+        if (
+          preservedFamily &&
+          (!merged.__family || merged.__family.length === 0)
+        ) {
+          merged.__family = preservedFamily.map(ensurePricingFields);
+        }
+        if (preservedGroupInfo && !merged.__groupInfo) {
+          merged.__groupInfo = preservedGroupInfo;
+        }
+        return merged;
       });
+
       return item;
     } catch (e) {
       setErrSafe(
@@ -344,7 +389,7 @@ export const ClientsProvider = ({ children }) => {
   return (
     <ClientsContext.Provider
       value={{
-        // detalle actual
+        // detalle
         current,
         setCurrent: setCurrentSafe,
 
@@ -374,7 +419,7 @@ export const ClientsProvider = ({ children }) => {
         loadFamilyByGroup,
 
         // stats
-        stats, // { summary, byCobrador, diffHistogram, topPositive, topNegative }
+        stats,
         loadingStats,
         fetchStats,
 

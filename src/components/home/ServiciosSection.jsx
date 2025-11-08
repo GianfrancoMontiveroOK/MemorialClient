@@ -6,8 +6,9 @@ import {
   CardContent,
   Typography,
   Divider,
+  useMediaQuery,
 } from "@mui/material";
-import { alpha } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 
 // ✅ IMPORTS (dos carpetas hacia atrás)
 import salas2 from "../../images/salas2.webp";
@@ -24,9 +25,9 @@ export default function ServiciosSection({ maxWidth = "90vw" }) {
       image: salas2,
     },
     {
-      title: "COCHES",
+      title: "TRASLADOS",
       description:
-        "Traslados con flota propia, discreta y puntal, coordinados las 24 hs.",
+        "Nuestros propios coches, discretos y puntales, coordinados las 24 hs.",
       image: coches,
     },
     {
@@ -35,22 +36,72 @@ export default function ServiciosSection({ maxWidth = "90vw" }) {
       image: urna,
     },
     {
-      title: "SEGUROS",
-      description: "Seguros de sepelio preventivo.",
+      title: "PREPAGO",
+      description: "Coberturas de sepelio prepagas.",
       image: seguro,
     },
   ];
 
-  return (
-    <Box
-      component="section"
-      sx={(theme) => ({
-        display: "flex",
-        justifyContent: "center",
-        py: { xs: 6, md: 5 },
-        backgroundColor: theme.palette.background.default,
-      })}
-    >
+  const theme = useTheme();
+  const isXs = useMediaQuery(theme.breakpoints.down("sm"));
+
+  const WHATSAPP = "5492610000000"; // reemplazar
+  const wsp = (servicio) =>
+    `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(
+      `Hola, me gustaría consultar sobre ${servicio.toLowerCase()}.`
+    )}`;
+
+return (
+  <Box
+    component="section"
+    aria-labelledby="aboutus-title"
+    sx={(t) => {
+      const primary = t.palette.primary.main;
+      const warn = t.palette.warning.main;
+      const isDark = t.palette.mode === "dark";
+
+      return {
+        minHeight: "100svh",
+        display: "grid",
+        placeItems: "center",
+        px: { xs: 2, md: 4 },
+        py: { xs: 8, md: 8 },
+
+        // color de texto correcto por modo
+        color: isDark ? t.palette.common.white : t.palette.text.primary,
+
+        // 🎨 fondos separados x modo (tu dark intacto)
+        background: isDark
+          ? `
+            radial-gradient(90rem 40rem at 15% 110%, ${alpha(warn, 0.10)} 0%, transparent 80%),
+            radial-gradient(70rem 30rem at 110% 110%, ${alpha(warn, 0.08)} 0%, transparent 80%),
+            linear-gradient(to top, ${alpha(warn, 0.08)} 0%, ${alpha(primary, 0)} 35%),
+            ${primary}
+          `
+          : `
+            /* halos suaves amarillos, apoyados sobre el bg del theme */
+            radial-gradient(70rem 28rem at 18% 105%, ${alpha(warn, 0.12)} 0%, transparent 70%),
+            radial-gradient(60rem 26rem at 105% 110%, ${alpha(warn, 0.10)} 0%, transparent 75%),
+            /* velo sutil desde abajo para separar cards del fondo */
+            linear-gradient(to top, ${alpha(warn, 0.06)} 0%, ${alpha(primary, 0)} 40%),
+            ${t.palette.background.default}
+          `,
+
+        /* opcional: mejora contraste de las cards internas sin tocar componentes */
+        "& .serviceCard": {
+          background: isDark
+            ? alpha(t.palette.common.white, 0.05)
+            : t.palette.background.paper,
+          borderColor: isDark
+            ? alpha("#000", 0.6)
+            : alpha("#000", 0.12),
+        },
+        "& .serviceCard h3, & .serviceCard .MuiTypography-root": {
+          color: isDark ? t.palette.common.white : t.palette.text.primary,
+        },
+      };
+    }}
+  >
       <Container
         disableGutters
         maxWidth={false}
@@ -59,20 +110,20 @@ export default function ServiciosSection({ maxWidth = "90vw" }) {
         {/* Título */}
         <Box sx={{ mb: { xs: 3, md: 5 } }}>
           <Typography
-            variant="h1"
-            component="h1"
-            sx={(theme) => ({
-              fontFamily: theme.typography.h1.fontFamily,
+            component="h2"
+            variant="h2"
+            sx={{
               fontWeight: 700,
               lineHeight: 1.1,
               color: theme.palette.text.primary,
               letterSpacing: 0.2,
-            })}
+            }}
           >
             NUESTROS SERVICIOS
           </Typography>
+
           <Divider
-            sx={(theme) => ({
+            sx={{
               mt: 1.2,
               width: 72,
               height: 4,
@@ -80,7 +131,7 @@ export default function ServiciosSection({ maxWidth = "90vw" }) {
               border: "none",
               backgroundColor:
                 theme.palette.roles?.accent || theme.palette.primary.main,
-            })}
+            }}
           />
         </Box>
 
@@ -111,7 +162,7 @@ export default function ServiciosSection({ maxWidth = "90vw" }) {
   );
 }
 
-function ServiceCard({ title, description, image }) {
+function ServiceCard({ title, description, image, href = "/contacto" }) {
   return (
     <Card
       elevation={0}
@@ -119,9 +170,8 @@ function ServiceCard({ title, description, image }) {
         const isDark = theme.palette.mode === "dark";
         const primary = theme.palette.primary.main;
         const accent = theme.palette.roles?.accent || primary;
-
         return {
-          height: "auto",
+          position: "relative", // ⬅️ necesario para posicionar el botón
           height: "100%",
           display: "flex",
           flexDirection: "column",
@@ -208,18 +258,17 @@ function ServiceCard({ title, description, image }) {
           {description}
         </Typography>
 
-        {/* Imagen cuadrada debajo del texto */}
+        {/* Imagen cuadrada */}
         <Box
           sx={(theme) => ({
-            mt: "auto", // ⬅️ empuja la imagen al fondo de la card
+            mt: "auto",
             position: "relative",
             width: "100%",
-            aspectRatio: "1 / 1", // ⬅️ cuadrada sin usar padding-top
+            aspectRatio: "1 / 1",
             borderRadius: 2,
             overflow: "hidden",
             border: `1px solid ${
-              theme.palette.roles?.accent  ||
-              alpha(theme.palette.accent, 0.12)
+              theme.palette.roles?.accent || alpha(theme.palette.accent, 0.12)
             }`,
             backgroundColor: theme.palette.background.paper,
           })}
@@ -239,6 +288,40 @@ function ServiceCard({ title, description, image }) {
           />
         </Box>
       </CardContent>
+
+      {/* Botón flotante — esquina inferior derecha */}
+      <Box
+        component="a"
+        href={href}
+        aria-label={`Consultar ${title}`}
+        sx={(t) => ({
+          position: "absolute",
+          right: 14,
+          bottom: 14,
+          textDecoration: "none",
+          borderRadius: 10,
+          backgroundColor: t.palette.warning.main,
+          color: t.palette.primary.text || "#231C1C",
+          px: 2,
+          py: 1,
+          fontWeight: 800,
+          fontSize: "0.9rem",
+          lineHeight: 1,
+          boxShadow: `0 6px 18px ${alpha(t.palette.warning.main, 0.28)}`,
+          border: `1px solid ${alpha(t.palette.common.black, 0.15)}`,
+          transition: "transform .15s ease, box-shadow .15s ease",
+          "&:hover": {
+            transform: "translateY(-1px)",
+            boxShadow: `0 10px 24px ${alpha(t.palette.warning.main, 0.34)}`,
+          },
+          "&:focus-visible": {
+            outline: `3px solid ${alpha(t.palette.warning.main, 0.45)}`,
+            outlineOffset: 2,
+          },
+        })}
+      >
+        Solicitar
+      </Box>
     </Card>
   );
 }

@@ -15,7 +15,7 @@ import {
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import SortRoundedIcon from "@mui/icons-material/SortRounded";
 import ChartCard from "../atoms/ChartCard";
-import { moneyFmt } from "../atoms/formatters";
+import { moneyFmt, pctFmt } from "../atoms/formatters";
 import {
   ResponsiveContainer,
   BarChart,
@@ -28,24 +28,46 @@ import {
 
 const RED = "#d32f2f";
 const GREEN = "#2e7d32";
+const INDIGO = "#4F46E5";
 
-// Helpers
-const toRows = (raw) =>
-  (Array.isArray(raw) ? raw : []).map((c) => ({
+function toRows(raw) {
+  return (Array.isArray(raw) ? raw : []).map((c) => ({
     idCobrador: String(c.idCobrador ?? "—"),
-    diffSum: Number(c.diffSum || 0),
+    name: String(c.name ?? `Cobrador ${c.idCobrador ?? "—"}`),
+    due: Number(c.due || 0),
+    paid: Number(c.paid || 0),
+    coverageRate: Number(c.coverageRate || 0), // 0..1
+    diffSum: Number(c.diffSum || 0), // = due - paid (faltante)
   }));
+}
 
-const toCSV = (rows) => {
-  const headers = ["idCobrador", "diffSum"];
+function toCSV(rows) {
+  const headers = [
+    "idCobrador",
+    "name",
+    "due",
+    "paid",
+    "diffSum",
+    "coverageRate",
+  ];
   const esc = (s) => `"${String(s ?? "").replaceAll('"', '""')}"`;
-  const body = rows
-    .map((r) => headers.map((k) => esc(r[k])).join(","))
-    .join("\n");
-  return `${headers.join(",")}\n${body}`;
-};
+  const body = rows.map((r) =>
+    [
+      r.idCobrador,
+      r.name,
+      r.due,
+      r.paid,
+      r.diffSum,
+      // exportamos cobertura como 0..100
+      (r.coverageRate || 0) * 100,
+    ]
+      .map(esc)
+      .join(",")
+  );
+  return `${headers.join(",")}\n${body.join("\n")}`;
+}
 
-const download = (name, text) => {
+function download(name, text) {
   const blob = new Blob([text], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -55,8 +77,14 @@ const download = (name, text) => {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-};
+}
 
+/**
+ * CobradorDeltaChart (v2)
+ * - Soporta métricas: 'gap' (faltante = due-paid), 'due', 'paid', 'coverage'
+ * - Orden por valor/alfabético
+ * - Filtro "solo faltante positivo"
+ */
 export default function CobradorDeltaChart({
   data = [],
   scopeLabel = "Todos los activos",
@@ -64,18 +92,44 @@ export default function CobradorDeltaChart({
   const base = React.useMemo(() => toRows(data), [data]);
 
   // Controles UI
-  const [showOnlyPositive, setShowOnlyPositive] = React.useState(true);
-  const [sortKey, setSortKey] = React.useState("delta"); // "delta" | "id"
-  const [sortDir, setSortDir] = React.useState("desc"); // "asc" | "desc"
-  const [topN, setTopN] = React.useState(10);
+  const [metric, setMetric] = React.useState("gap"); // 'gap' | 'due' | 'paid' | 'coverage'
+  const [showOnlyPositiveGap, setShowOnlyPositiveGap] = React.useState(true);
+  const [sortKey, setSortKey] = React.useState("value"); // 'value' | 'name' | 'id'
+  const [sortDir, setSortDir] = React.useState("desc"); // 'asc' | 'desc'
+  const [topN, setTopN] = React.useState(12);
+
+  // Normalizador de valor según métrica
+  const valueOf = React.useCallback(
+    (r) =>
+      metric === "gap"
+        ? r.diffSum
+        : metric === "due"
+        ? r.due
+        : metric === "paid"
+        ? r.paid
+        : (r.coverageRate || 0) * 100, // coverage en %
+    [metric]
+  );
 
   // Filtrado + orden
   const filtered = React.useMemo(() => {
     let arr = base;
-    if (showOnlyPositive) arr = arr.filter((r) => r.diffSum > 0);
-    if (sortKey === "delta") {
+
+    if (metric === "gap" && showOnlyPositiveGap) {
+      // faltante > 0
+      arr = arr.filter((r) => r.diffSum > 0);
+    }
+
+    const cmpVal = (a, b) =>
+      sortDir === "asc" ? valueOf(a) - valueOf(b) : valueOf(b) - valueOf(a);
+
+    if (sortKey === "value") {
+      arr = [...arr].sort(cmpVal);
+    } else if (sortKey === "name") {
       arr = [...arr].sort((a, b) =>
-        sortDir === "asc" ? a.diffSum - b.diffSum : b.diffSum - a.diffSum
+        sortDir === "asc"
+          ? a.name.localeCompare(b.name)
+          : b.name.localeCompare(a.name)
       );
     } else {
       arr = [...arr].sort((a, b) =>
@@ -84,17 +138,74 @@ export default function CobradorDeltaChart({
           : b.idCobrador.localeCompare(a.idCobrador)
       );
     }
+
     return arr.slice(0, Math.max(1, topN));
-  }, [base, showOnlyPositive, sortKey, sortDir, topN]);
+  }, [base, metric, showOnlyPositiveGap, sortKey, sortDir, topN, valueOf]);
 
   const empty = filtered.length === 0;
 
-  const exportCSV = () => download("cobradores_delta.csv", toCSV(filtered));
+  const exportCSV = () =>
+    download("cobradores_performance.csv", toCSV(filtered));
+
+  // Config eje X según métrica
+  const xTickFormatter =
+    metric === "coverage"
+      ? (v) => pctFmt((v || 0) / 100) // ya viene en %
+      : (v) => moneyFmt.format(v);
+
+  // Tooltip rico con breakdown
+  const tooltipFormatter = (val, _key, p) => {
+    const r = p?.payload ?? {};
+    const lines = [
+      ["Debe", moneyFmt.format(r.due || 0)],
+      ["Cobrado", moneyFmt.format(r.paid || 0)],
+      ["Faltante", moneyFmt.format(r.diffSum || 0)],
+      ["Cobertura", pctFmt(r.coverageRate || 0)],
+    ];
+    const label =
+      metric === "coverage"
+        ? ["Cobertura", pctFmt((val || 0) / 100)]
+        : metric === "gap"
+        ? ["Faltante", moneyFmt.format(val || 0)]
+        : metric === "due"
+        ? ["Debe", moneyFmt.format(val || 0)]
+        : ["Cobrado", moneyFmt.format(val || 0)];
+
+    // Recharts espera [value, name]
+    return [label[1], label[0], lines];
+  };
+
+  // Color por métrica:
+  // - gap: rojo si > 0 (faltante), verde si <= 0 (superávit)
+  // - due/paid: índigo
+  // - coverage: verde si >=100, rojo si <100
+  const colorFor = (r) => {
+    if (metric === "gap") return r.diffSum > 0 ? RED : GREEN;
+    if (metric === "coverage") return (r.coverageRate || 0) >= 1 ? GREEN : RED;
+    return INDIGO;
+    // due/paid en un color neutro consistente
+  };
+
+  // Etiqueta del eje X / título según métrica
+  const metricLabel =
+    metric === "gap"
+      ? "Faltante (Debe − Cobrado)"
+      : metric === "due"
+      ? "Debe del período"
+      : metric === "paid"
+      ? "Cobrado aplicado al período"
+      : "Cobertura del período";
 
   return (
     <ChartCard
-      title="Top cobradores por Δ positiva (ajuste pendiente)"
-      subtitle="Suma de Δ (Ideal − Cobro) por cobrador. Valores positivos sugieren revisar aumentos."
+      title={`Cobradores — ${metricLabel}`}
+      subtitle={
+        metric === "gap"
+          ? "Ordená por faltante para priorizar gestión. Rojo indica mayor importe pendiente."
+          : metric === "coverage"
+          ? "Cobertura: Cobrado / Debe. Verde ≥ 100%."
+          : "Vista por valor absoluto."
+      }
       right={<Chip size="small" label={scopeLabel} />}
     >
       {/* Controles */}
@@ -104,16 +215,31 @@ export default function CobradorDeltaChart({
         alignItems="center"
         sx={{ mb: 1 }}
       >
-        <FormControlLabel
-          control={
-            <Switch
-              size="small"
-              checked={showOnlyPositive}
-              onChange={(e) => setShowOnlyPositive(e.target.checked)}
-            />
-          }
-          label="Solo positivos"
-        />
+        <ToggleButtonGroup
+          size="small"
+          value={metric}
+          exclusive
+          onChange={(_e, v) => v && setMetric(v)}
+        >
+          <ToggleButton value="gap">Faltante</ToggleButton>
+          <ToggleButton value="due">Debe</ToggleButton>
+          <ToggleButton value="paid">Cobrado</ToggleButton>
+          <ToggleButton value="coverage">Cobertura %</ToggleButton>
+        </ToggleButtonGroup>
+
+        {metric === "gap" && (
+          <FormControlLabel
+            sx={{ ml: { sm: 1 } }}
+            control={
+              <Switch
+                size="small"
+                checked={showOnlyPositiveGap}
+                onChange={(e) => setShowOnlyPositiveGap(e.target.checked)}
+              />
+            }
+            label="Solo faltante > 0"
+          />
+        )}
 
         <ToggleButtonGroup
           size="small"
@@ -127,14 +253,18 @@ export default function CobradorDeltaChart({
           }}
           sx={{ ml: { sm: 1 } }}
         >
-          <ToggleButton value="delta:desc">
-            <SortRoundedIcon fontSize="small" style={{ marginRight: 6 }} />Δ ↓
+          <ToggleButton value="value:desc">
+            <SortRoundedIcon fontSize="small" style={{ marginRight: 6 }} />
+            {metric === "coverage" ? "% ↓" : "Valor ↓"}
           </ToggleButton>
-          <ToggleButton value="delta:asc">
-            <SortRoundedIcon fontSize="small" style={{ marginRight: 6 }} />Δ ↑
+          <ToggleButton value="value:asc">
+            <SortRoundedIcon fontSize="small" style={{ marginRight: 6 }} />
+            {metric === "coverage" ? "% ↑" : "Valor ↑"}
           </ToggleButton>
-          <ToggleButton value="id:asc">Cobrador A→Z</ToggleButton>
-          <ToggleButton value="id:desc">Cobrador Z→A</ToggleButton>
+          <ToggleButton value="name:asc">Nombre A→Z</ToggleButton>
+          <ToggleButton value="name:desc">Nombre Z→A</ToggleButton>
+          <ToggleButton value="id:asc">ID A→Z</ToggleButton>
+          <ToggleButton value="id:desc">ID Z→A</ToggleButton>
         </ToggleButtonGroup>
 
         <Box sx={{ flex: 1 }} />
@@ -143,19 +273,19 @@ export default function CobradorDeltaChart({
           direction="row"
           spacing={1}
           alignItems="center"
-          sx={{ minWidth: 180 }}
+          sx={{ minWidth: 220 }}
         >
-          <Typography variant="caption" sx={{ minWidth: 48 }}>
+          <Typography variant="caption" sx={{ minWidth: 64 }}>
             Top {topN}
           </Typography>
           <Slider
             size="small"
             value={topN}
-            min={3}
-            max={20}
+            min={5}
+            max={30}
             onChange={(_e, v) => setTopN(Number(v))}
             valueLabelDisplay="auto"
-            sx={{ maxWidth: 160 }}
+            sx={{ maxWidth: 180 }}
           />
         </Stack>
 
@@ -175,38 +305,83 @@ export default function CobradorDeltaChart({
       </Stack>
 
       {/* Chart */}
-      {/* Altura explícita para que ResponsiveContainer tenga espacio */}
-      <Box sx={{ height: 360 }}>
+      <Box sx={{ height: 380 }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
-            data={filtered}
+            data={filtered.map((r) => ({
+              ...r,
+              // valor que grafica depende de la métrica
+              value:
+                metric === "gap"
+                  ? r.diffSum
+                  : metric === "due"
+                  ? r.due
+                  : metric === "paid"
+                  ? r.paid
+                  : (r.coverageRate || 0) * 100, // %
+            }))}
             layout="vertical"
             margin={{ top: 8, right: 12, bottom: 8, left: 12 }}
           >
             <XAxis
               type="number"
-              tickFormatter={(v) => moneyFmt.format(v)}
+              tickFormatter={xTickFormatter}
               domain={["auto", "auto"]}
             />
             <YAxis
-              dataKey="idCobrador"
+              dataKey="name"
               type="category"
-              width={90}
+              width={140}
               tick={{ fontSize: 12 }}
             />
             <RTooltip
-              formatter={(v) => [moneyFmt.format(v), "Δ suma"]}
-              labelFormatter={(l) => `Cobrador ${l}`}
               wrapperStyle={{ outline: "none" }}
+              // Mostramos la etiqueta principal + breakdown
+              content={({ active, payload, label }) => {
+                if (!active || !payload || !payload.length) return null;
+                const r = payload[0]?.payload || {};
+                return (
+                  <Box
+                    sx={{
+                      p: 1,
+                      borderRadius: 1,
+                      bgcolor: "#0b1020",
+                      color: "#e8ecff",
+                      border: "1px solid rgba(255,255,255,0.16)",
+                    }}
+                  >
+                    <Typography
+                      variant="body2"
+                      fontWeight={800}
+                      sx={{ mb: 0.5 }}
+                    >
+                      {label}
+                    </Typography>
+                    <Typography variant="body2">
+                      Debe: <strong>{moneyFmt.format(r.due || 0)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Cobrado: <strong>{moneyFmt.format(r.paid || 0)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Faltante:{" "}
+                      <strong>{moneyFmt.format(r.diffSum || 0)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Cobertura: <strong>{pctFmt(r.coverageRate || 0)}</strong>
+                    </Typography>
+                  </Box>
+                );
+              }}
             />
             <Bar
-              dataKey="diffSum"
-              name="Δ suma"
+              dataKey="value"
+              name={metricLabel}
               barSize={18}
               radius={[4, 4, 4, 4]}
             >
               {filtered.map((r, i) => (
-                <Cell key={i} fill={r.diffSum > 0 ? RED : GREEN} />
+                <Cell key={i} fill={colorFor(r)} />
               ))}
             </Bar>
           </BarChart>
@@ -219,8 +394,9 @@ export default function CobradorDeltaChart({
         color="text.secondary"
         sx={{ display: "block", mt: 1 }}
       >
-        Tip: ordená por Δ ↓ para priorizar los cobradores con mayor ajuste
-        pendiente.
+        Tip: cambiá la métrica para ver **Faltante**, **Debe**, **Cobrado** o
+        **Cobertura %**. En “Faltante”, activá “Solo faltante &gt; 0” para
+        priorizar gestión.
       </Typography>
     </ChartCard>
   );

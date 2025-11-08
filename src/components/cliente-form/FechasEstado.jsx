@@ -1,4 +1,3 @@
-// src/components/cliente-form/FechasEstado.jsx
 import React from "react";
 import {
   Typography,
@@ -7,16 +6,17 @@ import {
   TextField,
   FormControlLabel,
   Checkbox,
+  Switch,
 } from "@mui/material";
 
-export default function FechasEstado({ values, onChange }) {
+export default function FechasEstado({ values, onChange, onToggleBaja }) {
   return (
     <>
       <Typography variant="h6" fontWeight={700} mt={3} mb={1}>
         Fechas
       </Typography>
       <Divider sx={{ mb: 2 }} />
-      <Grid container spacing={2}>
+      <Grid container spacing={2} justifyContent="center">
         <Grid item xs={12} md={3}>
           <TextField
             label="Ingreso"
@@ -63,35 +63,27 @@ export default function FechasEstado({ values, onChange }) {
         Estado & Preferencias
       </Typography>
       <Divider sx={{ mb: 2 }} />
-      <Grid container spacing={2}>
+      <Grid container spacing={2} justifyContent="center">
         <Grid item xs={12} md={4}>
           <FormControlLabel
             control={
-              <Checkbox checked={values.activo} onChange={onChange("activo")} />
+              <Checkbox
+                checked={values.activo}
+                onChange={(e) => onToggleBaja(!e.target.checked)}
+              />
             }
             label="Activo"
           />
         </Grid>
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} md={8}>
           <FormControlLabel
             control={
-              <Checkbox
-                checked={values.emergencia}
-                onChange={onChange("emergencia")}
+              <Switch
+                checked={!values.activo}
+                onChange={(e) => onToggleBaja(e.target.checked)}
               />
             }
-            label="Emergencia"
-          />
-        </Grid>
-        <Grid item xs={12} md={4}>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={values.tarjeta}
-                onChange={onChange("tarjeta")}
-              />
-            }
-            label="Tarjeta"
+            label="Dar de baja"
           />
         </Grid>
       </Grid>

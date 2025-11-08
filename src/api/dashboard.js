@@ -1,8 +1,11 @@
+// src/api/dashboard.js
 import axios from "./axios";
 
-export const getDashboardData = (config = {}) =>
-  axios.get("/dashboard", config);
-export const getAdminStats = (config = {}) =>
-  axios.get("/dashboard/admin", config);
-export const getCollectorStats = (config = {}) =>
-  axios.get("/dashboard/cobrador", config);
+const noStoreHeaders = { "Cache-Control": "no-cache" };
+
+export const getDashboardAccess = (config = {}) =>
+  axios.get("/dashboard", {
+    withCredentials: true,
+    headers: noStoreHeaders,
+    ...config,
+  });

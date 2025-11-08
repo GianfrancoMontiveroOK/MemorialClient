@@ -7,7 +7,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { listCollectorClients } from "../api/collector";
+import {
+  listCollectorClients,
+  getCollectorClientById,
+  getCollectorClientDebt, // deuda por períodos
+  listCollectorPayments as apiListPayments,
+  listCollectorReceipts as apiListReceipts, // ⬅️ NUEVO
+  createCollectorPayment,
+} from "../api/collector";
 
 const CollectorContext = createContext(null);
 
@@ -18,30 +25,27 @@ export const useCollector = () => {
   return ctx;
 };
 
-// Normaliza payload de lista
+/* -------------------- helpers de normalización -------------------- */
 const pickList = (resp) => {
   const root = resp?.data ?? resp ?? {};
   const payload = root?.data && !Array.isArray(root.data) ? root.data : root;
 
   const items = Array.isArray(payload.items) ? payload.items : [];
   const total = Number.isFinite(payload.total)
-    ? payload.total
-    : typeof payload.total === "string"
     ? Number(payload.total)
     : items.length;
 
-  const page = Number(payload.page) || 1;
-  const pageSize = Number(payload.pageSize || payload.limit) || 10;
+  // Sin paginación (full=1): normalizamos a 1/length
+  const page = 1;
+  const pageSize = items.length;
 
-  // opcional: respetar sort si viene en la respuesta
   const sortBy = payload.sortBy || "createdAt";
   const sortDir = payload.sortDir === "asc" ? "asc" : "desc";
 
   return { items, total, page, pageSize, sortBy, sortDir };
 };
 
-/* ====================== Helpers de pricing (fallback UI) ====================== */
-// ✅ calcula cuotaVigente si el backend no la trae
+/* -------------------- helpers de pricing -------------------- */
 const computeCuotaVigenteLocal = (it) => {
   const usarPisada = !!it?.usarCuotaPisada && it?.cuotaPisada != null;
   const pisadaNum =
@@ -56,7 +60,6 @@ const computeCuotaVigenteLocal = (it) => {
   return Number.isFinite(cuotaNum) ? cuotaNum : 0;
 };
 
-// ✅ asegura que cada item tenga cuotaVigente
 const ensurePricingFields = (it) => {
   if (!it || typeof it !== "object") return it;
   if (it.cuotaVigente == null) {
@@ -65,35 +68,60 @@ const ensurePricingFields = (it) => {
   return it;
 };
 
+// idempotencyKey simple para cobros
+const makeIdem = () =>
+  `idem_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
 export const CollectorProvider = ({
   children,
   collectorId,
-  createPaymentFn,
+  createPaymentFn, // opcional: override externo
 }) => {
-  // Estado listado
+  // listado
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
 
-  // Paginación (UI 0-based)
+  // paginación (ya no se usa para el listado principal, se mantiene por compatibilidad)
   const [page, setPage] = useState(0);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(-1); // -1 => mostrar todo en la UI
 
-  // Búsqueda
+  // búsqueda/orden
   const [q, setQ] = useState("");
-
-  // Orden
   const [sortBy, setSortBy] = useState("createdAt");
-  const [sortDir, setSortDir] = useState("desc"); // "asc" | "desc"
+  const [sortDir, setSortDir] = useState("desc");
 
-  // Flags
+  // flags
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
-  // Selección
-  const [selected, setSelected] = useState(null);
+  // selección (detalle)
+  const [selected, setSelected] = useState(null); // legacy
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [selectedFamily, setSelectedFamily] = useState([]);
 
-  // 🔧 Fix StrictMode: asegurar mounted=true en mount, false en cleanup
+  // deuda por períodos (cliente seleccionado)
+  const [debtLoading, setDebtLoading] = useState(false);
+  const [debt, setDebt] = useState([]); // periods[]
+  const [debtSummary, setDebtSummary] = useState(null);
+  const [debtMeta, setDebtMeta] = useState(null);
+
+  // pagos del cobrador
+  const [payments, setPayments] = useState([]);
+  const [paymentsStats, setPaymentsStats] = useState(null);
+  const [paymentsPage, setPaymentsPage] = useState(0);
+  const [paymentsLimit, setPaymentsLimit] = useState(25);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+
+  // recibos del cobrador (⬅️ NUEVO)
+  const [receipts, setReceipts] = useState([]);
+  const [receiptsLoading, setReceiptsLoading] = useState(false);
+
+  // debug id
+  const ctxIdRef = useRef(Math.random().toString(36).slice(2));
+  const ctxId = ctxIdRef.current;
+
+  // safe setState
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -101,31 +129,33 @@ export const CollectorProvider = ({
       mounted.current = false;
     };
   }, []);
-
-  // Helper para setState seguro post-unmount
   const safe = (setter) => (v) => {
     if (mounted.current) setter(v);
   };
-
   const setItemsSafe = safe(setItems);
   const setTotalSafe = safe(setTotal);
   const setLoadingSafe = safe(setLoading);
   const setSavingSafe = safe(setSaving);
   const setErrSafe = safe(setErr);
   const setSelectedSafe = safe(setSelected);
+  const setSelectedClientSafe = safe(setSelectedClient);
+  const setSelectedFamilySafe = safe(setSelectedFamily);
+  const setDebtLoadingSafe = safe(setDebtLoading);
+  const setDebtSafe = safe(setDebt);
+  const setDebtSummarySafe = safe(setDebtSummary);
+  const setDebtMetaSafe = safe(setDebtMeta);
+  const setPaymentsSafe = safe(setPayments);
+  const setPaymentsStatsSafe = safe(setPaymentsStats);
+  const setPaymentsLoadingSafe = safe(setPaymentsLoading);
+  const setReceiptsSafe = safe(setReceipts);
+  const setReceiptsLoadingSafe = safe(setReceiptsLoading);
 
-  // Debug id de contexto
-  const ctxIdRef = useRef(Math.random().toString(36).slice(2));
-  const ctxId = ctxIdRef.current;
-
-  // Guardamos el último query para refresh()
+  // record último query para refresh
   const lastQueryRef = useRef(null);
 
-  // Fetch principal
+  /* -------------------- fetch listado (SIN paginación) -------------------- */
   const fetchClientsByCollector = useCallback(
     async ({
-      page: uiPage = page,
-      limit: uiLimit = limit,
       q: query = q,
       sortBy: sb = sortBy,
       sortDir: sd = sortDir,
@@ -133,10 +163,8 @@ export const CollectorProvider = ({
       setLoadingSafe(true);
       setErrSafe("");
       try {
-        // backend 1-based
         const params = {
-          page: (Number.isInteger(uiPage) ? uiPage : 0) + 1,
-          limit: Number.isInteger(uiLimit) ? uiLimit : 10,
+          full: 1, // <<<<<< TRAER TODO
           q: String(query ?? "").trim(),
           sortBy: sb || "createdAt",
           sortDir: sd === "asc" ? "asc" : "desc",
@@ -148,33 +176,14 @@ export const CollectorProvider = ({
         const resp = await listCollectorClients(params);
         const { items: inItems, total: inTotal } = pickList(resp);
 
-        // ✅ asegurar id y cuotaVigente para UI
-        let outItems = inItems.map((r, i) => {
+        const outItems = inItems.map((r, i) => {
           const id =
-            r.id ??
-            (r._id ? String(r._id) : r.idCliente ?? `${params.page}-${i}`);
+            r.id ?? (r._id ? String(r._id) : r.idCliente ?? `row-${i}`);
           return ensurePricingFields({ id, ...r });
         });
 
-        // ✅ si el backend todavía no ordena por cuotaVigente, podés forzar client-side:
-        // if (params.sortBy === "cuotaVigente") {
-        //   outItems = [...outItems].sort((a, b) =>
-        //     (params.sortDir === "asc" ? 1 : -1) *
-        //     ((a.cuotaVigente ?? 0) - (b.cuotaVigente ?? 0))
-        //   );
-        // }
-
         setItemsSafe(outItems);
         setTotalSafe(Number(inTotal) || outItems.length);
-
-        // opcional: log
-        // console.log("[CollectorContext] set items", {
-        //   ctxId,
-        //   len: outItems.length,
-        //   total: Number(inTotal) || outItems.length,
-        //   first: outItems[0],
-        // });
-
         return { items: outItems, total: Number(inTotal) || outItems.length };
       } catch (e) {
         const msg =
@@ -187,33 +196,178 @@ export const CollectorProvider = ({
         setLoadingSafe(false);
       }
     },
-    [collectorId, page, limit, q, sortBy, sortDir]
+    [collectorId, q, sortBy, sortDir]
   );
 
-  // Refresh con los últimos parámetros usados
-  const refresh = useCallback(async () => {
-    const p = lastQueryRef.current ?? {
-      page: page + 1,
-      limit,
-      q,
-      sortBy,
-      sortDir,
-      ...(collectorId != null ? { idCobrador: collectorId } : {}),
-    };
-    return fetchClientsByCollector({
-      page: (p.page ?? 1) - 1, // volver a 0-based para el arg
-      limit: p.limit,
-      q: p.q,
-      sortBy: p.sortBy,
-      sortDir: p.sortDir,
-    });
-  }, [fetchClientsByCollector, page, limit, q, sortBy, sortDir, collectorId]);
-
-  // Hacé el fetch en el Provider (reactivo a page/limit/q/sort)
+  // carga inicial / cada cambio de q, sortBy, sortDir
   useEffect(() => {
-    fetchClientsByCollector({ page, limit, q, sortBy, sortDir });
-  }, [page, limit, q, sortBy, sortDir, fetchClientsByCollector]);
+    fetchClientsByCollector({ q, sortBy, sortDir });
+  }, [q, sortBy, sortDir, fetchClientsByCollector]);
 
+  /* -------------------- fetch detalle -------------------- */
+  const fetchCollectorClientById = useCallback(async (id) => {
+    if (!id) return null;
+    setLoadingSafe(true);
+    setErrSafe("");
+    try {
+      const resp = await getCollectorClientById(id);
+      const root = resp?.data ?? resp ?? {};
+      const data = root?.data || root?.cliente || null;
+      const family = Array.isArray(root?.family) ? root.family : [];
+
+      const clientOut = data ? ensurePricingFields(data) : null;
+      const familyOut = family.map(ensurePricingFields);
+
+      setSelectedClientSafe(clientOut);
+      setSelectedFamilySafe(familyOut);
+
+      return { client: clientOut, family: familyOut };
+    } catch (e) {
+      const msg =
+        e?.response?.data?.message ||
+        e?.message ||
+        "Error al obtener el cliente";
+      setErrSafe(msg);
+      setSelectedClientSafe(null);
+      setSelectedFamilySafe([]);
+      return null;
+    } finally {
+      setLoadingSafe(false);
+    }
+  }, []);
+
+  /* -------------------- deuda por períodos (cliente) -------------------- */
+  const fetchCollectorClientDebt = useCallback(async (id, params = {}) => {
+    if (!id) return null;
+    setDebtLoadingSafe(true);
+    setErrSafe("");
+    try {
+      const resp = await getCollectorClientDebt(id, params);
+      const root = resp?.data ?? resp ?? {};
+      // backend: { ok, clientId, currency, periods, summary, meta }
+      const periods = Array.isArray(root?.periods) ? root.periods : [];
+      const summary = root?.summary ?? null;
+      const meta = root?.meta ?? null;
+
+      setDebtSafe(periods);
+      setDebtSummarySafe(summary);
+      setDebtMetaSafe(meta);
+
+      return { periods, summary, meta };
+    } catch (e) {
+      const msg =
+        e?.response?.data?.message ||
+        e?.message ||
+        "Error al obtener deuda del cliente";
+      setErrSafe(msg);
+      setDebtSafe([]);
+      setDebtSummarySafe(null);
+      setDebtMetaSafe(null);
+      return null;
+    } finally {
+      setDebtLoadingSafe(false);
+    }
+  }, []);
+
+  /* -------------------- listado de pagos del cobrador -------------------- */
+  const fetchCollectorPayments = useCallback(
+    async ({
+      page = paymentsPage,
+      limit = paymentsLimit,
+      q,
+      dateFrom,
+      dateTo,
+      clientId,
+      method,
+      status,
+      sortBy = "postedAt",
+      sortDir = "desc",
+    } = {}) => {
+      setPaymentsLoadingSafe(true);
+      setErrSafe("");
+      try {
+        const resp = await apiListPayments({
+          page: (Number.isInteger(page) ? page : 0) + 1, // backend 1-based
+          limit,
+          q,
+          dateFrom,
+          dateTo,
+          clientId,
+          method,
+          status,
+          sortBy,
+          sortDir,
+        });
+        const root = resp?.data ?? resp ?? {};
+        const items = Array.isArray(root?.items) ? root.items : [];
+        const stats = root?.stats || null;
+
+        setPaymentsSafe(items);
+        setPaymentsStatsSafe(stats);
+        return { items, stats };
+      } catch (e) {
+        const msg =
+          e?.response?.data?.message ||
+          e?.message ||
+          "Error al listar pagos del cobrador";
+        setErrSafe(msg);
+        setPaymentsSafe([]);
+        setPaymentsStatsSafe(null);
+        return { items: [], stats: null };
+      } finally {
+        setPaymentsLoadingSafe(false);
+      }
+    },
+    [paymentsPage, paymentsLimit]
+  );
+
+  /* -------------------- listado de recibos del cobrador (⬅️ NUEVO) -------------------- */
+  const fetchCollectorReceipts = useCallback(
+    async ({
+      page = 0,
+      limit = 10,
+      q,
+      dateFrom,
+      dateTo,
+      clientId,
+      sortBy = "createdAt",
+      sortDir = "desc",
+    } = {}) => {
+      setReceiptsLoadingSafe(true);
+      setErrSafe("");
+      try {
+        const resp = await apiListReceipts({
+          page: (Number.isInteger(page) ? page : 0) + 1, // backend 1-based
+          limit,
+          q,
+          dateFrom,
+          dateTo,
+          clientId,
+          sortBy,
+          sortDir,
+        });
+        const root = resp?.data ?? resp ?? {};
+        const items = Array.isArray(root?.items) ? root.items : [];
+        const total = Number(root?.total) || items.length;
+
+        setReceiptsSafe(items);
+        return { items, total };
+      } catch (e) {
+        const msg =
+          e?.response?.data?.message ||
+          e?.message ||
+          "Error al listar recibos del cobrador";
+        setErrSafe(msg);
+        setReceiptsSafe([]);
+        return { items: [], total: 0 };
+      } finally {
+        setReceiptsLoadingSafe(false);
+      }
+    },
+    []
+  );
+
+  /* -------------------- crear cobro simple (MVP compatible) -------------------- */
   const createPayment = useCallback(
     async (client, payload) => {
       setSavingSafe(true);
@@ -223,8 +377,6 @@ export const CollectorProvider = ({
           const res = await createPaymentFn(client, payload);
           return res?.data ?? res ?? { ok: true };
         }
-        // Mock si no hay fn
-        // console.log("[CollectorContext] createPayment (mock)", { client, payload });
         return { ok: true };
       } catch (e) {
         const msg =
@@ -240,17 +392,141 @@ export const CollectorProvider = ({
     [createPaymentFn]
   );
 
+  /* -------------------- cobro extendido: AUTO y MANUAL -------------------- */
+  const payAuto = useCallback(
+    async (
+      clienteId,
+      { amount, method = "efectivo", notes = "", collectedAt } = {}
+    ) => {
+      setSavingSafe(true);
+      setErrSafe("");
+      try {
+        const payload = {
+          clienteId,
+          amount, // si no viene, el backend usa cuotaVigente
+          method,
+          idempotencyKey: makeIdem(),
+          channel: "field",
+          notes,
+          strategy: "auto",
+          ...(collectedAt ? { collectedAt } : {}),
+        };
+        const resp = await createCollectorPayment(payload);
+        const root = resp?.data ?? resp ?? {};
+        if (!root?.ok) {
+          const msg = root?.message || "No se pudo registrar el cobro";
+          setErrSafe(msg);
+          return { ok: false, message: msg };
+        }
+        if (selectedClient?._id === clienteId) {
+          try {
+            await fetchCollectorClientById(clienteId);
+            await fetchCollectorClientDebt(clienteId);
+          } catch {}
+        }
+        return root; // { ok, data: { payment, receipt, ... } }
+      } catch (e) {
+        const msg =
+          e?.response?.data?.message ||
+          e?.message ||
+          "No se pudo registrar el cobro";
+        setErrSafe(msg);
+        return { ok: false, message: msg };
+      } finally {
+        setSavingSafe(false);
+      }
+    },
+    [selectedClient, fetchCollectorClientById, fetchCollectorClientDebt]
+  );
+
+  const payManual = useCallback(
+    async (
+      clienteId,
+      breakdown, // [{ period:"YYYY-MM", amount:Number }]
+      { amount, method = "efectivo", notes = "", collectedAt } = {}
+    ) => {
+      setSavingSafe(true);
+      setErrSafe("");
+      try {
+        const payload = {
+          clienteId,
+          amount,
+          method,
+          idempotencyKey: makeIdem(),
+          channel: "field",
+          notes,
+          strategy: "manual",
+          breakdown: Array.isArray(breakdown) ? breakdown : [],
+          ...(collectedAt ? { collectedAt } : {}),
+        };
+        const resp = await createCollectorPayment(payload);
+        const root = resp?.data ?? resp ?? {};
+        if (!root?.ok) {
+          const msg = root?.message || "No se pudo registrar el cobro";
+          setErrSafe(msg);
+          return { ok: false, message: msg };
+        }
+        if (selectedClient?._id === clienteId) {
+          try {
+            await fetchCollectorClientById(clienteId);
+            await fetchCollectorClientDebt(clienteId);
+          } catch {}
+        }
+        return root;
+      } catch (e) {
+        const msg =
+          e?.response?.data?.message ||
+          e?.message ||
+          "No se pudo registrar el cobro (manual)";
+        setErrSafe(msg);
+        return { ok: false, message: msg };
+      } finally {
+        setSavingSafe(false);
+      }
+    },
+    [selectedClient, fetchCollectorClientById, fetchCollectorClientDebt]
+  );
+
+  // Cobro “one-click”
+  const chargeSelected = useCallback(async () => {
+    if (!selectedClient?._id) {
+      setErrSafe("No hay cliente seleccionado para cobrar.");
+      return { ok: false, message: "Sin cliente seleccionado" };
+    }
+    return payAuto(selectedClient._id, { method: "efectivo" });
+  }, [selectedClient, payAuto]);
+
+  /* -------------------- refresh listado -------------------- */
+  const refresh = useCallback(async () => {
+    const p = lastQueryRef.current ?? {
+      full: 1,
+      q,
+      sortBy,
+      sortDir,
+      ...(collectorId != null ? { idCobrador: collectorId } : {}),
+    };
+    return fetchClientsByCollector({
+      q: p.q,
+      sortBy: p.sortBy,
+      sortDir: p.sortDir,
+    });
+  }, [fetchClientsByCollector, q, sortBy, sortDir, collectorId]);
+
   const value = {
     // debug
     ctxId,
 
-    // data
+    // data listado
     items,
     total,
     page,
     limit,
     q,
+
+    // selección/detalle
     selected,
+    selectedClient,
+    selectedFamily,
 
     // orden
     sortBy,
@@ -261,19 +537,47 @@ export const CollectorProvider = ({
     saving,
     err,
 
+    // deuda por períodos
+    debtLoading,
+    debt,
+    debtSummary,
+    debtMeta,
+
+    // pagos/recibos del cobrador
+    payments,
+    paymentsStats,
+    paymentsLoading,
+    receipts, // ⬅️ NUEVO
+    receiptsLoading, // ⬅️ NUEVO
+    paymentsPage,
+    paymentsLimit,
+    setPaymentsPage,
+    setPaymentsLimit,
+
     // setters
     setPage,
     setLimit,
     setQ,
     setSelected: setSelectedSafe,
+    setSelectedClient: setSelectedClientSafe,
+    setSelectedFamily: setSelectedFamilySafe,
     setErr: setErrSafe,
     setSortBy,
     setSortDir,
 
-    // actions
+    // acciones
     fetchClientsByCollector,
+    fetchCollectorClientById,
+    fetchCollectorClientDebt,
+    fetchCollectorPayments,
+    fetchCollectorReceipts, // ⬅️ NUEVO
     refresh,
-    createPayment,
+
+    // cobros
+    createPayment, // wrapper opcional legacy
+    chargeSelected, // one-click (AUTO)
+    payAuto, // AUTO FIFO
+    payManual, // MANUAL con breakdown
   };
 
   return (

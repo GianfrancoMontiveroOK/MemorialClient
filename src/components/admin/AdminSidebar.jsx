@@ -1,31 +1,67 @@
+// src/components/AdminSidebar.jsx
 import React from "react";
-import { Box, List, ListItemButton, ListItemIcon, ListItemText, Typography } from "@mui/material";
+import {
+  Box,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Typography,
+} from "@mui/material";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import PeopleAltIcon from "@mui/icons-material/PeopleAlt";
-import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
 import InsightsIcon from "@mui/icons-material/Insights";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 
+// NUEVOS (transacciones/admin)
+import SyncAltIcon from "@mui/icons-material/SyncAlt"; // Transacciones (lista)
+import AccountBalanceIcon from "@mui/icons-material/AccountBalance"; // Diario (asientos)
+import OutboxIcon from "@mui/icons-material/Outbox"; // Outbox (eventos a ERP)
+import PolicyIcon from "@mui/icons-material/Policy"; // Auditoría
+
+// 🔹 Icono para Recibos
+import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
+
+// 🔹 Icono para Arqueos
+import ContentCutRoundedIcon from "@mui/icons-material/ContentCutRounded";
+
 export const DRAWER_WIDTH = 240;
 
+// Nota: mantenemos claves existentes y agregamos nuevas.
+// Usá estas keys en tu contenedor para mostrar la vista correspondiente.
 export const SECTIONS = [
-  { key: "resumen", label: "Resumen", icon: <DashboardIcon /> },
-  { key: "clientes", label: "Clientes", icon: <PeopleAltIcon /> },
-  { key: "pagos", label: "Pagos", icon: <ReceiptLongIcon /> },
-  { key: "usuarios", label: "Usuarios", icon: <PersonOutlineIcon /> },
-  { key: "estadisticas", label: "Estadísticas", icon: <InsightsIcon /> },
-  // NUEVO:
-  { key: "settings", label: "Settings de precios", icon: <SettingsOutlinedIcon /> },
+  { key: "clientes", label: "CLIENTES", icon: <PeopleAltIcon /> },
+
+  // 🔹 Nuevo: Recibos (lista de recibos con PDF/WhatsApp)
+  { key: "recibos", label: "RECIBOS", icon: <PictureAsPdfIcon /> },
+
+  // 🔹 Arqueos (cajas por usuario, cortes)
+  { key: "arqueos", label: "ARQUEOS", icon: <ContentCutRoundedIcon /> },
+
+  // 🔹 Apoyados por el TransactionsContext y los endpoints admin
+  { key: "transacciones", label: "TRANSACCIONES", icon: <SyncAltIcon /> },
+  { key: "diario", label: "DIARIO", icon: <AccountBalanceIcon /> },
+  { key: "outbox", label: "OUTBOX", icon: <OutboxIcon /> },
+  { key: "auditoria", label: "AUDITORÍA", icon: <PolicyIcon /> },
+
+  { key: "usuarios", label: "USUARIOS", icon: <PersonOutlineIcon /> },
+  { key: "estadisticas", label: "ESTADÍSTICAS", icon: <InsightsIcon /> },
+  { key: "settings", label: "CONFIGURACIÓN", icon: <SettingsOutlinedIcon /> },
 ];
 
 export default function AdminSidebar({ section, onChange }) {
   return (
     <Box sx={{ width: DRAWER_WIDTH, p: 1 }}>
       <Box sx={{ px: 2, py: 2 }}>
-        <Typography variant="h6" fontWeight={800}>SuperAdmin</Typography>
-        <Typography variant="caption" color="text.secondary">Panel de control</Typography>
+        <Typography variant="h6" fontWeight={800}>
+          SuperAdmin
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Panel de control
+        </Typography>
       </Box>
+
       <List dense>
         {SECTIONS.map((s) => {
           const selected = s.key === section;

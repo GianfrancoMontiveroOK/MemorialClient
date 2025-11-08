@@ -36,7 +36,7 @@ export const listClientes = (params = {}) => {
 
 // STATS (agregados globales para dashboard)
 export const getClientesStats = (params = {}) =>
-  axios.get("/clientes/stats?debug=1", { params, withCredentials: true });
+  axios.get("/admin/clientes/stats", { params, withCredentials: true });
 
 // OBTENER UNO
 export function getClienteById(id, opts = {}) {

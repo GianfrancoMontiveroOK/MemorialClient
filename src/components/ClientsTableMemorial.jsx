@@ -24,11 +24,10 @@ import {
   TextField,
   InputAdornment,
   Chip,
+  Stack,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import VisibilityIcon from "@mui/icons-material/Visibility";
-import EditIcon from "@mui/icons-material/Edit";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
@@ -36,26 +35,36 @@ import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import { useNavigate } from "react-router-dom";
 import { useClients } from "../context/ClientsContext";
 
+const onlyDigits = (s = "") => String(s).replace(/\D+/g, "");
+
 export default function ClientsTableMemorial() {
   const navigate = useNavigate();
+  const { list, items, total, loading, err } = useClients();
 
-  // Contexto
-  const { list, items, total, loading, err, deleteOne } = useClients();
-
-  // Estado de tabla (server-side)
-  const [page, setPage] = useState(0); // UI 0-based
+  const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [sortDir, setSortDir] = useState("asc"); // "asc" = más viejos primero
+  const [sortDir, setSortDir] = useState("desc");
   const [sortBy] = useState("createdAt");
 
-  // 🔎 Buscador
+  // 🔎 buscador (server-side → global a toda la base)
   const [searchText, setSearchText] = useState("");
   const [activeQuery, setActiveQuery] = useState({
     q: "",
     byIdCliente: undefined,
-  }); // lo que está aplicado actualmente
+    byDocumento: undefined, // DNI/documento (solo dígitos)
+  });
   const searchRef = useRef(null);
   const debounceRef = useRef(null);
+
+  // 🎯 filtros locales (client-side)
+  const FILTERS = {
+    ALL: "ALL",
+    ONLY_IDEAL: "ONLY_IDEAL",
+    ONLY_HIST: "ONLY_HIST",
+    BELOW_IDEAL: "BELOW_IDEAL",
+    ABOVE_IDEAL: "ABOVE_IDEAL",
+  };
+  const [localFilter, setLocalFilter] = useState(FILTERS.ALL);
 
   const money = useMemo(
     () =>
@@ -69,53 +78,129 @@ export default function ClientsTableMemorial() {
 
   const fmtDiff = useCallback(
     (n) => {
-      if (typeof n !== "number") return "—";
-      const sign = n > 0 ? "+" : "";
-      return `${sign}${money.format(n)}`;
+      if (!Number.isFinite(n)) return "—";
+      const sign = n > 0 ? "+" : n < 0 ? "−" : "";
+      const abs = Math.abs(n);
+      return `${sign}${money.format(abs)}`;
     },
     [money]
   );
 
-  // Helpers para parsear entrada y decidir filtro
+  /**
+   * Parser profesional:
+   * - "dni 30.123.456", "dni:30123456", "doc 30123456", "documento 30-123-456" ⇒ byDocumento = DIGITS
+   * - "#123", "id: 123" ⇒ byIdCliente = 123
+   * - "30.123.456" o "30-123-456" ⇒ byDocumento = DIGITS (contiene separadores)
+   * - "30123456" (>=6 dígitos) ⇒ por defecto DNI (byDocumento); usá "#123" o "id:123" para forzar idCliente
+   * - "123" (<=5 dígitos puros) ⇒ idCliente
+   * - resto ⇒ q (texto libre)
+   */
   const parseSearch = useCallback((raw) => {
     const v = String(raw || "").trim();
-    // id:123  |  #123  |  123
-    const idMatch =
-      /^id\s*:\s*(\d+)$/.exec(v.toLowerCase()) ||
-      /^#\s*(\d+)$/.exec(v) ||
-      /^(\d+)$/.exec(v);
-    if (idMatch) {
-      return { q: "", byIdCliente: Number(idMatch[1]) };
+    const low = v.toLowerCase();
+    const digits = onlyDigits(v);
+
+    // Prefijos explícitos de DNI/doc
+    const dniPref =
+      /^dni[:\s]+(.+)$/.exec(low) || /^doc(?:umento)?[:\s]+(.+)$/.exec(low);
+    if (dniPref) {
+      const d = onlyDigits(dniPref[1]);
+      return { q: "", byIdCliente: undefined, byDocumento: d || undefined };
     }
-    // texto -> q
-    return { q: v, byIdCliente: undefined };
+
+    // Forzar ID cliente con "#123" o "id: 123"
+    const idMatch = /^id\s*:\s*(\d+)$/.exec(low) || /^#\s*(\d+)$/.exec(v);
+    if (idMatch) {
+      return {
+        q: "",
+        byIdCliente: Number(idMatch[1]),
+        byDocumento: undefined,
+      };
+    }
+
+    // Si el texto contiene separadores y tiene ≥6 dígitos, asumir DNI normalizado
+    const hasNonDigits = /\D/.test(v);
+    if (hasNonDigits && digits.length >= 6) {
+      return { q: "", byIdCliente: undefined, byDocumento: digits };
+    }
+
+    // Solo dígitos
+    if (/^\d+$/.test(v)) {
+      if (v.length >= 6) {
+        // Ambiguo, por defecto DNI para que funcione con "30123456"
+        return { q: "", byIdCliente: undefined, byDocumento: v };
+      }
+      // Cortos → idCliente
+      return { q: "", byIdCliente: Number(v), byDocumento: undefined };
+    }
+
+    // Texto libre
+    return { q: v, byIdCliente: undefined, byDocumento: undefined };
   }, []);
 
   const pageForApi = useMemo(() => page + 1, [page]);
-  const rows = Array.isArray(items) ? items : [];
+  const rowsRaw = Array.isArray(items) ? items : [];
 
   const getIdForRoute = (r) => r?._id ?? r?.idCliente ?? r?.id;
   const getRowKey = (r) =>
     r?._id ?? `${r?.idCliente ?? "row"}-${r?.documento ?? Math.random()}`;
 
-  // Carga (listado)
+  const getCuotaCobrada = (r) => {
+    const ideal = Number(r?.cuotaIdeal || 0);
+    const hist = Number(r?.cuota || 0);
+    return r?.usarCuotaIdeal ? ideal : hist;
+  };
+
+  const getDiff = (r) => {
+    const ideal = Number(r?.cuotaIdeal || 0);
+    const cobrada = getCuotaCobrada(r);
+    if (!Number.isFinite(ideal) || !Number.isFinite(cobrada)) return undefined;
+    return cobrada - ideal;
+  };
+
+  const rows = useMemo(() => {
+    switch (localFilter) {
+      case FILTERS.ONLY_IDEAL:
+        return rowsRaw.filter((r) => !!r.usarCuotaIdeal);
+      case FILTERS.ONLY_HIST:
+        return rowsRaw.filter((r) => !r.usarCuotaIdeal);
+      case FILTERS.BELOW_IDEAL:
+        return rowsRaw.filter((r) => {
+          const d = getDiff(r);
+          return Number.isFinite(d) && d < 0;
+        });
+      case FILTERS.ABOVE_IDEAL:
+        return rowsRaw.filter((r) => {
+          const d = getDiff(r);
+          return Number.isFinite(d) && d > 0;
+        });
+      default:
+        return rowsRaw;
+    }
+  }, [rowsRaw, localFilter]);
+
+  // 🚚 cargar lista (server-side → GLOBAL)
   const load = useCallback(async () => {
     const params = {
-      page: pageForApi, // backend 1-based
+      page: pageForApi,
       limit: rowsPerPage,
       sortBy,
       sortDir,
     };
-    if (activeQuery.byIdCliente !== undefined) {
+    if (activeQuery.byDocumento) {
+      // FRONT normaliza → siempre dígitos
+      params.byDocumento = String(activeQuery.byDocumento);
+      params.q = "";
+      params.byIdCliente = undefined;
+    } else if (activeQuery.byIdCliente !== undefined) {
       params.byIdCliente = activeQuery.byIdCliente;
-      params.q = ""; // aseguramos no mezclar en backend
+      params.q = "";
     } else {
       params.q = activeQuery.q || "";
     }
     await list(params);
   }, [list, pageForApi, rowsPerPage, sortBy, sortDir, activeQuery]);
 
-  // Inicial + cambios de paginación/orden/filtro aplicado
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -127,15 +212,15 @@ export default function ClientsTableMemorial() {
     };
   }, [load]);
 
-  // Debounce de input
+  // ⌛ debounce search (server-side)
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       const parsed = parseSearch(searchText);
-      // si cambia el filtro efectivo, aplicamos y volvemos a pag 1
       const changed =
         parsed.q !== activeQuery.q ||
-        parsed.byIdCliente !== activeQuery.byIdCliente;
+        parsed.byIdCliente !== activeQuery.byIdCliente ||
+        parsed.byDocumento !== activeQuery.byDocumento;
       if (changed) {
         setActiveQuery(parsed);
         setPage(0);
@@ -144,55 +229,23 @@ export default function ClientsTableMemorial() {
     return () => clearTimeout(debounceRef.current);
   }, [searchText, parseSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Paginación
+  // pag/orden
   const handleChangePage = (_evt, newPage) => setPage(newPage);
   const handleChangeRowsPerPage = (evt) => {
     const v = parseInt(evt.target.value, 10);
     setRowsPerPage(v);
-    setPage(0); // volver a la primera
+    setPage(0);
   };
-
-  // Orden asc/desc
   const handleToggleSort = () => {
     setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     setPage(0);
   };
 
-  // Acciones por fila
   const handleView = (r) => navigate(`/app/clientes/${getIdForRoute(r)}`);
-  const handleEdit = (r) =>
-    navigate(`/app/clientes/${getIdForRoute(r)}/editar`);
-
-  const handleDelete = async (r) => {
-    const label = r?.nombre
-      ? `${r.nombre} (#${r.idCliente ?? "s/n"})`
-      : `#${r.idCliente ?? "s/n"}`;
-    if (
-      !window.confirm(
-        `¿Eliminar cliente ${label}? Esta acción no se puede deshacer.`
-      )
-    )
-      return;
-
-    try {
-      await deleteOne(getIdForRoute(r));
-
-      // si borramos el último de la página y no quedan más, retroceder una página
-      const newCount = (total || 0) - 1;
-      const lastPageIndex = Math.max(0, Math.ceil(newCount / rowsPerPage) - 1);
-      setPage((p) => (p > lastPageIndex ? lastPageIndex : p));
-
-      // refrescar
-      await load();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
   const sortLabel =
     sortDir === "asc" ? "Más viejos primero" : "Más nuevos primero";
 
-  // Atajos de teclado: Ctrl/Cmd+K para enfocar search
+  // accesos rápidos
   useEffect(() => {
     const onKey = (e) => {
       const isMac = navigator.platform.toUpperCase().includes("MAC");
@@ -205,16 +258,16 @@ export default function ClientsTableMemorial() {
         searchRef.current?.select();
       }
       if (e.key === "Enter" && document.activeElement === searchRef.current) {
-        // aplicar al instante (sin esperar debounce)
         const parsed = parseSearch(searchText);
         const changed =
           parsed.q !== activeQuery.q ||
-          parsed.byIdCliente !== activeQuery.byIdCliente;
+          parsed.byIdCliente !== activeQuery.byIdCliente ||
+          parsed.byDocumento !== activeQuery.byDocumento;
         if (changed) {
           setActiveQuery(parsed);
           setPage(0);
         } else {
-          load(); // forzar refresh
+          load();
         }
       }
     };
@@ -224,28 +277,71 @@ export default function ClientsTableMemorial() {
 
   const clearSearch = () => {
     setSearchText("");
-    setActiveQuery({ q: "", byIdCliente: undefined });
+    setActiveQuery({ q: "", byIdCliente: undefined, byDocumento: undefined });
     setPage(0);
   };
 
   const hasFilter =
     (activeQuery.q && activeQuery.q.length > 0) ||
-    activeQuery.byIdCliente !== undefined;
+    activeQuery.byIdCliente !== undefined ||
+    activeQuery.byDocumento !== undefined;
 
   return (
     <Paper elevation={0} sx={{ borderRadius: 3, overflow: "hidden" }}>
       <Toolbar sx={{ gap: 1, flexWrap: "wrap", alignItems: "center" }}>
-        <Typography variant="h6" sx={{ fontWeight: 800 }}>
+        <Typography variant="h4" fontWeight={700} textTransform="uppercase">
           Clientes {loading ? "…" : `· ${total ?? 0}`}
         </Typography>
 
-        {/* 🔎 Buscador */}
+        {/* Filtros locales */}
+        <Stack direction="row" spacing={1} sx={{ ml: 1 }}>
+          <Chip
+            label="Todos"
+            size="small"
+            color={localFilter === FILTERS.ALL ? "primary" : "default"}
+            onClick={() => setLocalFilter(FILTERS.ALL)}
+            variant={localFilter === FILTERS.ALL ? "filled" : "outlined"}
+          />
+          <Chip
+            label="Solo IDEAL"
+            size="small"
+            color={localFilter === FILTERS.ONLY_IDEAL ? "success" : "default"}
+            onClick={() => setLocalFilter(FILTERS.ONLY_IDEAL)}
+            variant={localFilter === FILTERS.ONLY_IDEAL ? "filled" : "outlined"}
+          />
+          <Chip
+            label="Solo HIST."
+            size="small"
+            onClick={() => setLocalFilter(FILTERS.ONLY_HIST)}
+            variant={localFilter === FILTERS.ONLY_HIST ? "filled" : "outlined"}
+          />
+          <Chip
+            label="Por debajo del ideal"
+            size="small"
+            color={localFilter === FILTERS.BELOW_IDEAL ? "error" : "default"}
+            onClick={() => setLocalFilter(FILTERS.BELOW_IDEAL)}
+            variant={
+              localFilter === FILTERS.BELOW_IDEAL ? "filled" : "outlined"
+            }
+          />
+          <Chip
+            label="Por encima del ideal"
+            size="small"
+            color={localFilter === FILTERS.ABOVE_IDEAL ? "success" : "default"}
+            onClick={() => setLocalFilter(FILTERS.ABOVE_IDEAL)}
+            variant={
+              localFilter === FILTERS.ABOVE_IDEAL ? "filled" : "outlined"
+            }
+          />
+        </Stack>
+
+        {/* 🔎 Buscador (server-side → GLOBAL) */}
         <Box sx={{ flex: 1, minWidth: 260 }}>
           <TextField
             inputRef={searchRef}
             size="small"
             fullWidth
-            placeholder="Buscar por nombre o N° cliente… (Ctrl/Cmd+K)"
+            placeholder='Buscar por nombre, N° cliente o DNI… (ej: "dni 30.123.456", "#123", "30123456")'
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             InputProps={{
@@ -265,10 +361,17 @@ export default function ClientsTableMemorial() {
               ) : null,
             }}
           />
-          {/* Chips de filtro aplicado */}
           {hasFilter && (
             <Box mt={0.5}>
-              {activeQuery.byIdCliente !== undefined ? (
+              {activeQuery.byDocumento !== undefined ? (
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={`DNI: ${activeQuery.byDocumento}`}
+                  onDelete={clearSearch}
+                  sx={{ mr: 0.5 }}
+                />
+              ) : activeQuery.byIdCliente !== undefined ? (
                 <Chip
                   size="small"
                   variant="outlined"
@@ -280,7 +383,7 @@ export default function ClientsTableMemorial() {
                 <Chip
                   size="small"
                   variant="outlined"
-                  label={`Nombre: “${activeQuery.q}”`}
+                  label={`Búsqueda: “${activeQuery.q}”`}
                   onDelete={clearSearch}
                   sx={{ mr: 0.5 }}
                 />
@@ -289,7 +392,7 @@ export default function ClientsTableMemorial() {
           )}
         </Box>
 
-        {/* Botón toggle de orden */}
+        {/* Orden */}
         <Tooltip title={sortLabel}>
           <span>
             <IconButton
@@ -338,13 +441,11 @@ export default function ClientsTableMemorial() {
             <TableRow>
               <TableCell>N° Cliente</TableCell>
               <TableCell>Nombre</TableCell>
+              <TableCell>ID Cobrador</TableCell>
               <TableCell>Dirección</TableCell>
-              <TableCell>Cobrador</TableCell>
-              <TableCell>Estado</TableCell>
-              <TableCell align="right">Cuota</TableCell>
-              <TableCell align="right">Dif. Ideal</TableCell>
               <TableCell align="center">Integrantes</TableCell>
-              <TableCell>Ingreso</TableCell>
+              <TableCell align="right">Cuota</TableCell>
+              <TableCell align="right">Diferencia</TableCell>
               <TableCell align="right">Acciones</TableCell>
             </TableRow>
           </TableHead>
@@ -352,7 +453,7 @@ export default function ClientsTableMemorial() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={10} align="center">
+                <TableCell colSpan={8} align="center">
                   <Box py={3}>
                     <Typography variant="body2" color="text.secondary">
                       Cargando…
@@ -362,7 +463,7 @@ export default function ClientsTableMemorial() {
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} align="center">
+                <TableCell colSpan={8} align="center">
                   <Box py={3}>
                     <Typography variant="body2" color="text.secondary">
                       {err ? `Error: ${err}` : "Sin resultados"}
@@ -371,87 +472,107 @@ export default function ClientsTableMemorial() {
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((r) => (
-                <TableRow hover key={getRowKey(r)}>
-                  <TableCell>{r.idCliente ?? "—"}</TableCell>
-                  <TableCell>{r.nombre ?? "—"}</TableCell>
-                  <TableCell>{r.domicilio ?? "—"}</TableCell>
-                  <TableCell>{r.idCobrador ?? "—"}</TableCell>
-                  <TableCell>{r.activo ? "Activo" : "Baja"}</TableCell>
+              rows.map((r) => {
+                const cuotaCobrada = getCuotaCobrada(r);
+                const diff = getDiff(r);
+                const above = Number.isFinite(diff) && diff > 0;
+                const below = Number.isFinite(diff) && diff < 0;
 
-                  {/* Cuota (histórica) */}
-                  <TableCell align="right">
-                    {typeof r.cuota === "number" ? money.format(r.cuota) : "—"}
-                  </TableCell>
-
-                  {/* Diferencia Ideal vs Cobro (backend: difIdealVsCobro) */}
-                  <TableCell align="right">
-                    {typeof r.difIdealVsCobro === "number" ? (
-                      <Chip
+                return (
+                  <TableRow hover key={getRowKey(r)}>
+                    <TableCell>{r.idCliente ?? "—"}</TableCell>
+                    <TableCell>{r.nombre ?? "—"}</TableCell>
+                    <TableCell>
+                      {Number.isFinite(r.idCobrador) ? (
+                        <Chip
+                          size="small"
+                          label={`#${r.idCobrador}`}
+                          sx={{ height: 22, fontWeight: 700 }}
+                          variant="outlined"
+                        />
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell>{r.domicilio ?? "—"}</TableCell>
+                    <TableCell align="center">
+                      {Number.isFinite(r.integrantesCount)
+                        ? r.integrantesCount
+                        : "—"}
+                    </TableCell>
+                    <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                      {Number.isFinite(cuotaCobrada)
+                        ? money.format(cuotaCobrada)
+                        : "—"}
+                      {r.usarCuotaIdeal ? (
+                        <Chip
+                          size="small"
+                          label="IDEAL"
+                          color="success"
+                          sx={{ ml: 1, height: 20, fontWeight: 700 }}
+                        />
+                      ) : (
+                        <Chip
+                          size="small"
+                          label="HIST."
+                          variant="outlined"
+                          sx={{
+                            ml: 1,
+                            height: 20,
+                            fontWeight: 700,
+                            color: "text.secondary",
+                            borderColor: "divider",
+                          }}
+                        />
+                      )}
+                    </TableCell>
+                    <TableCell align="right">
+                      {Number.isFinite(diff) ? (
+                        <Tooltip
+                          title={
+                            above
+                              ? "Por encima del ideal"
+                              : below
+                              ? "Por debajo del ideal"
+                              : "Igual al ideal"
+                          }
+                        >
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label={fmtDiff(diff)}
+                            sx={{
+                              fontWeight: 700,
+                              ...(above
+                                ? {
+                                    borderColor: "success.main",
+                                    color: "success.dark",
+                                  }
+                                : below
+                                ? {
+                                    borderColor: "error.main",
+                                    color: "error.dark",
+                                  }
+                                : { opacity: 0.7 }),
+                            }}
+                          />
+                        </Tooltip>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell align="right" style={{ whiteSpace: "nowrap" }}>
+                      <IconButton
                         size="small"
-                        variant="outlined"
-                        label={fmtDiff(r.difIdealVsCobro)}
-                        sx={{
-                          fontWeight: 700,
-                          ...(r.difIdealVsCobro > 0
-                            ? {
-                                borderColor: "warning.main",
-                                color: "warning.dark",
-                              }
-                            : r.difIdealVsCobro < 0
-                            ? {
-                                borderColor: "success.main",
-                                color: "success.dark",
-                              }
-                            : {}),
-                        }}
-                      />
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
-
-                  {/* Integrantes del grupo (backend: integrantesCount) */}
-                  <TableCell align="center">
-                    {Number.isFinite(r.integrantesCount)
-                      ? r.integrantesCount
-                      : "—"}
-                  </TableCell>
-
-                  {/* Ingreso */}
-                  <TableCell>
-                    {r.ingreso
-                      ? new Date(r.ingreso).toLocaleDateString("es-AR")
-                      : "—"}
-                  </TableCell>
-
-                  {/* Acciones */}
-                  <TableCell align="right" style={{ whiteSpace: "nowrap" }}>
-                    <IconButton
-                      size="small"
-                      title="Ver"
-                      onClick={() => handleView(r)}
-                    >
-                      <VisibilityIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      title="Editar"
-                      onClick={() => handleEdit(r)}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      color="error"
-                      title="Eliminar"
-                      onClick={() => handleDelete(r)}
-                    >
-                      <DeleteOutlineIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))
+                        title="Ver"
+                        onClick={() => handleView(r)}
+                      >
+                        <VisibilityIcon fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

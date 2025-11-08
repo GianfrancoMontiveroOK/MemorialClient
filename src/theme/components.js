@@ -24,6 +24,34 @@ export function buildComponents(theme) {
         { props: { variant: "display" }, style: theme.typography.display },
       ],
     },
+    MuiSwitch: {
+      styleOverrides: {
+        // color base del track cuando está apagado (unchecked)
+        track: ({ theme }) => ({
+          backgroundColor:
+            theme.palette.mode === "dark"
+              ? alpha(theme.palette.primary.main, 0.45)
+              : alpha(theme.palette.primary.main, 0.35),
+          opacity: 1, // asegura que no quede translúcido
+        }),
+
+        // solo intervenimos el estado checked para colores, sin cambiar geometría
+        switchBase: ({ theme }) => ({
+          "&.Mui-checked": {
+            color: theme.palette.common.white, // thumb blanco como en el default
+          },
+          "&.Mui-checked + .MuiSwitch-track": {
+            backgroundColor: theme.palette.success.main, // track verde al activar
+            opacity: 1,
+          },
+        }),
+      },
+
+      // default al verde al activar (aprovecha el comportamiento nativo)
+      defaultProps: {
+        color: "success",
+      },
+    },
 
     MuiButton: {
       styleOverrides: {
@@ -219,7 +247,7 @@ export function buildComponents(theme) {
             "--btn-bg": success,
             "--btn-fg": onSuccess,
             backgroundColor: "var(--btn-bg)",
-            color: "var(--btn-fg)",
+            color: theme.palette.common.white,
             boxShadow: shadowBase,
             "&:hover": {
               backgroundColor: "var(--btn-fg)",
@@ -271,11 +299,109 @@ export function buildComponents(theme) {
       },
     },
 
+    // --- LABEL flotante más legible (chip) ---
+    MuiInputLabel: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          fontSize: "0.95rem",
+          letterSpacing: 0.2,
+          color: alpha(theme.palette.text.primary, 0.8),
+          // transición suave
+          transition: theme.transitions.create(["transform", "color"], {
+            duration: 160,
+          }),
+        }),
+        shrink: ({ theme }) => ({
+          // “chip” sobre el borde
+          paddingInline: 8,
+          paddingBlock: 2,
+          borderRadius: 6,
+          backgroundColor:
+            theme.palette.mode === "dark"
+              ? theme.palette.background.default
+              : theme.palette.background.paper,
+          // elevar contraste cuando está shrink
+          color: theme.palette.text.primary,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          // bajamos un poco menos el label para que no toque el borde
+          transform: "translate(12px, -9px) scale(0.90)",
+        }),
+      },
+    },
+
+    // --- BORDE y paddings del Outlined ---
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          borderRadius: 10,
+          backgroundColor:
+            theme.palette.mode === "dark"
+              ? alpha(theme.palette.common.white, 0.02)
+              : theme.palette.background.paper,
+          "&:hover .MuiOutlinedInput-notchedOutline": {
+            borderColor: alpha(theme.palette.text.primary, 0.35),
+          },
+          "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+            borderWidth: 2,
+            borderColor: theme.palette.primary.main,
+            boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.15)}`,
+          },
+        }),
+        notchedOutline: ({ theme }) => ({
+          borderColor: alpha(theme.palette.text.primary, 0.25),
+        }),
+        input: ({ theme }) => ({
+          padding: "14px 14px",
+          fontSize: "0.98rem",
+          "::placeholder": {
+            color: alpha(theme.palette.text.primary, 0.5),
+            opacity: 1,
+          },
+        }),
+        // textarea / multiline
+        inputMultiline: {
+          padding: "12px 14px",
+          lineHeight: 1.5,
+        },
+      },
+    },
+
+    // --- TextField (wrapper) ---
     MuiTextField: {
       styleOverrides: {
-        root: { "& .MuiOutlinedInput-root": { borderRadius: 8 } },
+        root: ({ theme }) => ({
+          // separar label del helper
+          marginTop: 2,
+        }),
       },
-      defaultProps: { size: "medium" },
+      defaultProps: {
+        size: "medium",
+        fullWidth: true,
+        variant: "outlined",
+      },
+    },
+
+    // --- HelperText con mejor legibilidad ---
+    MuiFormHelperText: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          marginTop: 6,
+          fontSize: "0.85rem",
+          color: alpha(theme.palette.text.primary, 0.75),
+        }),
+      },
+    },
+
+    // --- FormLabel (por si algún control usa FormLabel directo) ---
+    MuiFormLabel: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          fontWeight: 500,
+          letterSpacing: 0.2,
+          textTransform: "uppercase",
+        }),
+      },
     },
 
     MuiContainer: {
@@ -287,6 +413,153 @@ export function buildComponents(theme) {
           "@media (min-width:1200px)": { paddingLeft: 32, paddingRight: 32 },
         },
       },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: ({ ownerState, theme }) => {
+          // base grande + tipografía consistente
+          return {
+            borderRadius: 10,
+            height: 40, // "grande" por defecto (MUI no trae size="large"; agrandamos medium)
+            paddingInline: 8,
+            fontWeight: 700,
+            letterSpacing: 0.4,
+            textTransform: "uppercase",
+            boxShadow: "none",
+            "& .MuiChip-label": {
+              paddingInline: 10,
+              paddingBlock: 6,
+              fontSize: "0.875rem",
+            },
+            "& .MuiChip-icon": { fontSize: 20, marginLeft: 6 },
+            "& .MuiChip-deleteIcon": { fontSize: 18, opacity: 0.7 },
+            "&:hover .MuiChip-deleteIcon": { opacity: 1 },
+          };
+        },
+
+        // Afinamos el "small" por si alguna vez lo usás
+        sizeSmall: {
+          height: 32,
+          "& .MuiChip-label": {
+            paddingInline: 8,
+            paddingBlock: 4,
+            fontSize: "0.8rem",
+          },
+        },
+
+        // Estilo para FILLED según color
+filled: ({ ownerState, theme }) => {
+  const { color = "default" } = ownerState;
+
+  const isDark = theme.palette.mode === "dark";
+  const txt = theme.palette.text.primary;
+
+  // 🎯 DEFAULT (sin color): pill neutro y hover sutil
+  if (
+    color === "default" ||
+    !["primary","secondary","success","error","warning","info","contrast"].includes(color)
+  ) {
+    const bg = isDark
+      ? alpha(theme.palette.common.white, 0.08)
+      : alpha(theme.palette.primary.main, 0.08);
+
+    const bgHover = isDark
+      ? alpha(theme.palette.common.white, 0.12)
+      : alpha(theme.palette.primary.main, 0.14);
+
+    return {
+      backgroundColor: bg,
+      color: txt,
+      boxShadow: "none",
+      "&:hover, &.MuiChip-clickable:hover": {
+        backgroundColor: bgHover,
+        boxShadow: "none",
+      },
+    };
+  }
+
+  // 🎯 COLOREADOS (primary/success/error/warning/etc.)
+  const pal =
+    color === "contrast"
+      ? theme.palette.contrast
+      : theme.palette[color];
+
+  // Texto por defecto del color
+  let fg = pal?.contrastText || txt;
+
+  // Mejor contraste para success (verde)
+  if (color === "success") {
+    fg = isDark ? theme.palette.common.white : theme.palette.common.white;
+  }
+
+  const bg = pal?.main || alpha(txt, 0.08);
+
+  return {
+    backgroundColor: bg,
+    color: fg,
+    "&:hover, &.MuiChip-clickable:hover": {
+      backgroundColor: isDark ? alpha(bg, 0.88) : alpha(bg, 0.92),
+      boxShadow: "0 1px 0 rgba(0,0,0,0.06), 0 3px 8px rgba(0,0,0,0.10)",
+    },
+  };
+},
+
+        // Estilo para OUTLINED según color
+        outlined: ({ ownerState, theme }) => {
+          const { color = "default" } = ownerState;
+          const txtBase =
+            theme.palette.mode === "dark"
+              ? theme.palette.common.white
+              : theme.palette.text.primary;
+
+          const main =
+            theme.palette?.[color]?.main ??
+            (color === "contrast" ? theme.palette.contrast?.main : txtBase);
+
+          return {
+            borderWidth: 1.5,
+            borderStyle: "solid",
+            borderColor: alpha(main, 0.7),
+            color: main,
+            backgroundColor: "transparent",
+            "&:hover": {
+              backgroundColor: alpha(main, 0.08),
+              borderColor: main,
+            },
+          };
+        },
+      },
+
+      defaultProps: {
+        size: "medium", // lo agrandamos vía styleOverrides
+        variant: "filled", // por defecto como los contained
+      },
+
+      // Variants "semánticos" opcionales por si te gusta matchear los alias de Button
+      // (uso: <Chip variant="confirm" label="Aprobado" />)
+      variants: [
+        {
+          props: { variant: "confirm" },
+          style: {
+            backgroundColor: theme.palette.success.main,
+            color: theme.palette.common.white,
+          },
+        },
+        {
+          props: { variant: "cancel" },
+          style: {
+            backgroundColor: theme.palette.error.main,
+            color: theme.palette.common.white,
+          },
+        },
+        {
+          props: { variant: "brandYellow" },
+          style: {
+            backgroundColor: theme.palette.warning.main,
+            color: theme.palette.common.black,
+          },
+        },
+      ],
     },
   };
 }

@@ -108,7 +108,7 @@ export default function ClienteDetalle() {
             component={RouterLink}
             underline="hover"
             color="inherit"
-            to="/app/clientes"
+            to="/dashboard"
           >
             Clientes
           </MLink>
