@@ -20,6 +20,8 @@ import {
   IconButton,
   Tooltip,
   Pagination,
+  Snackbar,
+  Alert,
 } from "@mui/material";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
@@ -34,40 +36,39 @@ const ROLE_OPTIONS = [
 ];
 
 export default function UsuariosPanel({
-  // === existentes ===
   users = [],
   loading = false,
   onSearch,
   onSelectUser,
-
-  // === nuevos opcionales (si no los pasás, no se rompen) ===
   onChangeRole, // (userId, newRole) => Promise | void
-  onAssignCobrador, // (userId, idCobrador) => Promise | void
-  onAssignVendedor, // (userId, idVendedor) => Promise | void
-
-  // paginación opcional
+  onAssignCobrador, // (userId, idCobrador|null) => Promise | void
+  onAssignVendedor, // (userId, idVendedor|null) => Promise | void
   page,
   total,
   limit,
-  onPageChange, // (newPage) => void
+  onPageChange,
 }) {
   const [byId, setById] = React.useState("");
   const [byEmail, setByEmail] = React.useState("");
 
-  // estados locales de edición por fila
-  const [roleDraft, setRoleDraft] = React.useState({}); // { userId: "admin" }
-  const [cobradorDraft, setCobradorDraft] = React.useState({}); // { userId: "123" }
-  const [vendedorDraft, setVendedorDraft] = React.useState({}); // { userId: "456" }
+  const [roleDraft, setRoleDraft] = React.useState({});
+  const [cobradorDraft, setCobradorDraft] = React.useState({});
+  const [vendedorDraft, setVendedorDraft] = React.useState({});
 
-  // toggles de edición (solo mostrar input cuando se edita)
-  const [editCobrador, setEditCobrador] = React.useState({}); // { userId: true }
-  const [editVendedor, setEditVendedor] = React.useState({}); // { userId: true }
+  const [editCobrador, setEditCobrador] = React.useState({});
+  const [editVendedor, setEditVendedor] = React.useState({});
 
-  const [saving, setSaving] = React.useState({}); // { key(userId-field): true }
+  const [saving, setSaving] = React.useState({});
+  const [errOpen, setErrOpen] = React.useState(false);
+  const [errMsg, setErrMsg] = React.useState("");
 
-  const handleSearch = () => {
-    onSearch?.({ id: byId.trim(), email: byEmail.trim() });
+  const showError = (msg) => {
+    setErrMsg(msg || "Error realizando la operación.");
+    setErrOpen(true);
   };
+
+  const handleSearch = () =>
+    onSearch?.({ id: byId.trim(), email: byEmail.trim() });
 
   const startSave = (k) => setSaving((s) => ({ ...s, [k]: true }));
   const endSave = (k) =>
@@ -84,6 +85,10 @@ export default function UsuariosPanel({
     try {
       startSave(key);
       await onChangeRole(u._id, next);
+    } catch (e) {
+      const status = e?.response?.status;
+      const msg = e?.response?.data?.message || e?.message;
+      showError(status === 403 ? msg || "No tenés permisos." : msg);
     } finally {
       endSave(key);
     }
@@ -96,7 +101,11 @@ export default function UsuariosPanel({
     try {
       startSave(key);
       await onAssignCobrador(u._id, next || null);
-      setEditCobrador((m) => ({ ...m, [u._id]: false })); // cerrar edición al guardar
+      setEditCobrador((m) => ({ ...m, [u._id]: false }));
+    } catch (e) {
+      const status = e?.response?.status;
+      const msg = e?.response?.data?.message || e?.message;
+      showError(status === 403 ? msg || "No tenés permisos." : msg);
     } finally {
       endSave(key);
     }
@@ -109,7 +118,11 @@ export default function UsuariosPanel({
     try {
       startSave(key);
       await onAssignVendedor(u._id, next || null);
-      setEditVendedor((m) => ({ ...m, [u._id]: false })); // cerrar edición al guardar
+      setEditVendedor((m) => ({ ...m, [u._id]: false }));
+    } catch (e) {
+      const status = e?.response?.status;
+      const msg = e?.response?.data?.message || e?.message;
+      showError(status === 403 ? msg || "No tenés permisos." : msg);
     } finally {
       endSave(key);
     }
@@ -119,7 +132,7 @@ export default function UsuariosPanel({
 
   return (
     <Box>
-          <Typography variant="h4" fontWeight={700} textTransform= "uppercase">
+      <Typography variant="h4" fontWeight={700} textTransform="uppercase">
         Usuarios
       </Typography>
 
@@ -162,7 +175,7 @@ export default function UsuariosPanel({
         Resultados
       </Typography>
 
-      {/* Tabla de resultados */}
+      {/* Tabla */}
       <Paper
         elevation={0}
         sx={{ borderRadius: 2, border: "1px solid rgba(0,0,0,0.06)" }}
@@ -257,7 +270,7 @@ export default function UsuariosPanel({
                       </Stack>
                     </TableCell>
 
-                    {/* ===== Cobrador ===== */}
+                    {/* Cobrador */}
                     <TableCell sx={{ minWidth: 200 }}>
                       {!isEditingCob ? (
                         hasCobrador ? (
@@ -336,10 +349,7 @@ export default function UsuariosPanel({
                           <Button
                             size="small"
                             onClick={() =>
-                              setEditCobrador((m) => ({
-                                ...m,
-                                [u._id]: false,
-                              }))
+                              setEditCobrador((m) => ({ ...m, [u._id]: false }))
                             }
                           >
                             Cancelar
@@ -348,7 +358,7 @@ export default function UsuariosPanel({
                       )}
                     </TableCell>
 
-                    {/* ===== Vendedor ===== */}
+                    {/* Vendedor */}
                     <TableCell sx={{ minWidth: 200 }}>
                       {!isEditingVen ? (
                         hasVendedor ? (
@@ -427,10 +437,7 @@ export default function UsuariosPanel({
                           <Button
                             size="small"
                             onClick={() =>
-                              setEditVendedor((m) => ({
-                                ...m,
-                                [u._id]: false,
-                              }))
+                              setEditVendedor((m) => ({ ...m, [u._id]: false }))
                             }
                           >
                             Cancelar
@@ -475,7 +482,22 @@ export default function UsuariosPanel({
         </Stack>
       ) : null}
 
-      {/* Separador visual */}
+      {/* Snackbar de errores (403 y otros) */}
+      <Snackbar
+        open={errOpen}
+        autoHideDuration={4200}
+        onClose={() => setErrOpen(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      >
+        <Alert
+          severity="error"
+          variant="filled"
+          onClose={() => setErrOpen(false)}
+        >
+          {errMsg}
+        </Alert>
+      </Snackbar>
+
       <Divider sx={{ my: 3 }} />
       <Typography variant="body2" color="text.secondary">
         Tip: hacé click en el nombre para abrir edición avanzada (dialog o

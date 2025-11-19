@@ -20,9 +20,19 @@ import {
 } from "@mui/material";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
-import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
-import { listArqueosUsuarios } from "../../../api/arqueos";
+import LocalAtmRoundedIcon from "@mui/icons-material/LocalAtmRounded";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
+import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
+import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
+
+import { useAuth } from "../../../context/AuthContext";
+import {
+  listArqueosUsuarios,
+  getArqueoUsuarioDetalle,
+  depositoCajaChica,
+  getArqueoGlobalTotals,
+} from "../../../api/arqueos";
 
 const ROLE_OPTIONS = [
   { value: "", label: "Todos" },
@@ -75,7 +85,201 @@ function computeTotals(row) {
   return { deb, cred, net, last, moves };
 }
 
+/** ─────────────────────────────────────────────────────────────
+ *  Tarjeta de “Caja Personal” (encima de los filtros)
+ *  - Para admins: muestra CAJA_ADMIN y CAJA_CHICA + botón “Mover todo a caja chica”
+ *  - Mueve SIEMPRE el 100% del saldo de CAJA_ADMIN → CAJA_CHICA
+ *  ───────────────────────────────────────────────────────────── */
+function AdminPersonalCajaCard({ dateFrom, dateTo, onMoved }) {
+  const { user } = useAuth() || {};
+  const myId = user?._id || user?.id || user?.userId;
+  const myRole = user?.role || "";
+
+  const [loading, setLoading] = React.useState(false);
+  const [saldoAdmin, setSaldoAdmin] = React.useState(0);
+  const [saldoChicaGlobal, setSaldoChicaGlobal] = React.useState(0);
+  const [note, setNote] = React.useState("");
+
+  const canShow = myRole === "admin" && !!myId;
+
+  const fetchBalances = React.useCallback(async () => {
+    if (!canShow) return;
+    setLoading(true);
+    try {
+      // Personal: CAJA_ADMIN (ligada a userId)
+      const pPersonal = getArqueoUsuarioDetalle({
+        userId: myId,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+        accountCodes: "CAJA_ADMIN",
+        page: 1,
+        limit: 1,
+      });
+
+      // Global: CAJA_CHICA (sin userId)
+      const pGlobal = getArqueoGlobalTotals({
+        accountCodes: "CAJA_CHICA",
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+      });
+
+      const [rPer, rGlob] = await Promise.all([pPersonal, pGlobal]);
+
+      setSaldoAdmin(Number(rPer?.data?.header?.totals?.balance || 0));
+      // Soporta dos posibles formas: { totals: {...} } o { totals: { CAJA_CHICA: {...} } }
+      const tg = rGlob?.data?.totals;
+      const balanceGlobal =
+        typeof tg?.balance === "number"
+          ? tg.balance
+          : Number(tg?.CAJA_CHICA?.balance || 0);
+
+      setSaldoChicaGlobal(Number(balanceGlobal || 0));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [canShow, myId, dateFrom, dateTo]);
+
+  React.useEffect(() => {
+    fetchBalances();
+  }, [fetchBalances]);
+
+  const moveAllToCajaChica = async () => {
+    const amt = Number(saldoAdmin || 0);
+    if (amt <= 0) {
+      window.alert("No hay saldo en CAJA_ADMIN para mover.");
+      return;
+    }
+    const ok = window.confirm(
+      `Se moverán ${fmtMoney(
+        amt
+      )} desde CAJA_ADMIN a CAJA_CHICA (global). ¿Confirmar?`
+    );
+    if (!ok) return;
+
+    try {
+      await depositoCajaChica({
+        adminUserId: myId,
+        amount: amt,
+        currency: "ARS",
+        note,
+      });
+      await fetchBalances();
+      onMoved?.();
+    } catch (e) {
+      console.error(e);
+      window.alert(
+        e?.response?.data?.message ||
+          e?.message ||
+          "No se pudo mover a caja chica"
+      );
+    }
+  };
+
+  if (!canShow) return null;
+
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        p: 2,
+        mb: 1.5,
+        borderRadius: 2,
+        bgcolor: (t) =>
+          t.palette.mode === "dark"
+            ? "rgba(255,255,255,0.02)"
+            : "rgba(0,0,0,0.02)",
+      }}
+    >
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        spacing={2}
+        alignItems={{ xs: "stretch", md: "center" }}
+        justifyContent="space-between"
+      >
+        <Stack
+          direction="row"
+          spacing={1.5}
+          alignItems="center"
+          flexWrap="wrap"
+        >
+          <LocalAtmRoundedIcon color="primary" />
+          <Typography variant="subtitle1" fontWeight={800}>
+            Mi caja (Admin)
+          </Typography>
+        </Stack>
+
+        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+          {/* CAJA_ADMIN (personal) */}
+          <Chip
+            icon={<SavingsRoundedIcon />}
+            color="default"
+            variant="outlined"
+            label={
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="body2" color="text.secondary">
+                  CAJA_ADMIN
+                </Typography>
+                <Typography variant="body2" fontWeight={800}>
+                  {loading ? "…" : fmtMoney(saldoAdmin)}
+                </Typography>
+              </Stack>
+            }
+          />
+          {/* CAJA_CHICA (GLOBAL) */}
+          <Chip
+            icon={<AccountBalanceRoundedIcon />}
+            color="success"
+            variant="outlined"
+            label={
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="body2" color="text.secondary">
+                  CAJA_CHICA (GLOBAL)
+                </Typography>
+                <Typography variant="body2" fontWeight={800}>
+                  {loading ? "…" : fmtMoney(saldoChicaGlobal)}
+                </Typography>
+              </Stack>
+            }
+          />
+        </Stack>
+
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="contained"
+            startIcon={<ArrowForwardRoundedIcon />}
+            onClick={moveAllToCajaChica}
+            disabled={loading || Number(saldoAdmin) <= 0}
+            title={
+              Number(saldoAdmin) <= 0
+                ? "Sin saldo en CAJA_ADMIN"
+                : `Mover ${fmtMoney(saldoAdmin)} a CAJA_CHICA`
+            }
+          >
+            Mover todo a caja chica
+          </Button>
+        </Stack>
+      </Stack>
+
+      <Box mt={1.25}>
+        <TextField
+          fullWidth
+          size="small"
+          label="Nota (opcional)"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Ej: cierre de caja diaria"
+        />
+      </Box>
+    </Paper>
+  );
+}
+
 export default function ArqueosSection({ onOpenCollectorDetail }) {
+  const { user } = useAuth() || {};
+  const viewerRole = user?.role || "";
+
   const [items, setItems] = React.useState([]);
   const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(0); // 0-based UI
@@ -106,7 +310,7 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
       setTotal(res?.data?.total || 0);
     } catch (e) {
       console.error(e);
-      alert(
+      window.alert(
         e?.response?.data?.message ||
           e?.message ||
           "No se pudieron cargar los arqueos"
@@ -157,6 +361,13 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
           </Button>
         </Stack>
       </Stack>
+
+      {/* ── Caja personal (admins) ───────────────────────────────── */}
+      <AdminPersonalCajaCard
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onMoved={fetchData}
+      />
 
       {/* Filtros */}
       <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, mb: 1.5 }}>
@@ -241,7 +452,7 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
             {items.map((r) => {
               const { deb, cred, net, last, moves } = computeTotals(r);
               return (
-                <TableRow key={String(r.userId || r.userName)}>
+                <TableRow key={String(r._id || r.userId || r.userName)}>
                   <TableCell>
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Chip
@@ -259,7 +470,7 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
                       variant="caption"
                       sx={{ fontFamily: "monospace" }}
                     >
-                      {String(r.userId || "—")}
+                      {String(r._id || r.userId || "—")}
                     </Typography>
                   </TableCell>
                   <TableCell>

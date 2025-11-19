@@ -17,7 +17,7 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
 
 import MenuIcon from "@mui/icons-material/Menu";
 import CallIcon from "@mui/icons-material/Call";
@@ -64,15 +64,43 @@ export default function NavbarMemorial({
   const goSection = useCallback(
     (id) => {
       const doScroll = () => {
+        if (id === "inicio") {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          return;
+        }
         const el = document.getElementById(id);
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (!el) return;
+        const header = document.querySelector("header .MuiToolbar-root");
+        const offset = header?.offsetHeight ?? 72;
+        const top =
+          el.getBoundingClientRect().top + window.pageYOffset - offset;
+        window.scrollTo({ top, behavior: "smooth" });
       };
-      if (pathname === "/") doScroll();
-      else navigate(`/#${id}`);
+
+      if (pathname !== "/") {
+        navigate(`/#${id}`);
+        // el scroll after-navigate lo hace el useEffect de HomePage
+      } else {
+        // actualizo el hash para que quede compartible
+        if (window.location.hash !== `#${id}`) {
+          window.history.replaceState(null, "", `#${id}`);
+        }
+        doScroll();
+      }
       setDrawerOpen(false);
     },
     [navigate, pathname]
   );
+
+  const handleGoHome = () => {
+    if (pathname === "/") {
+      if (window.location.hash) window.history.replaceState(null, "", "/");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      navigate("/");
+      setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 0);
+    }
+  };
 
   return (
     <AppBar
@@ -103,16 +131,35 @@ export default function NavbarMemorial({
 
           {/* Logo (click -> home) */}
           <Box
-            onClick={() => navigate("/")}
-            sx={{ display: "inline-flex", alignItems: "center", cursor: "pointer" }}
+            component={RouterLink}
+            to="/"
+            onClick={(e) => {
+              e.preventDefault();
+              handleGoHome();
+            }}
+            aria-label="Ir al inicio"
+            sx={{
+              display: "inline-flex",
+              alignItems: "center",
+              cursor: "pointer",
+              textDecoration: "none",
+            }}
           >
             <AppLogo height={38} />
           </Box>
 
           {/* Desktop: links */}
-          <Stack direction="row" spacing={2} sx={{ ml: 3, display: { xs: "none", lg: "flex" } }}>
+          <Stack
+            direction="row"
+            spacing={2}
+            sx={{ ml: 3, display: { xs: "none", lg: "flex" } }}
+          >
             {NAV_LINKS.map((link) => (
-              <Button key={link.id} variant="nav" onClick={() => goSection(link.id)}>
+              <Button
+                key={link.id}
+                variant="nav"
+                onClick={() => goSection(link.id)}
+              >
                 {link.label}
               </Button>
             ))}
@@ -121,7 +168,11 @@ export default function NavbarMemorial({
           <Box sx={{ flexGrow: 1 }} />
 
           {/* Desktop: acciones */}
-          <Stack direction="row" spacing={1} sx={{ display: { xs: "none", md: "flex" } }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{ display: { xs: "none", md: "flex" } }}
+          >
             <Button
               variant="soft"
               color="contrast"
@@ -166,7 +217,8 @@ export default function NavbarMemorial({
                     borderRadius: 1,
                     width: 47,
                     height: 47,
-                    transition: "transform .15s ease, background-color .15s ease, color .15s ease",
+                    transition:
+                      "transform .15s ease, background-color .15s ease, color .15s ease",
                     "&:hover": {
                       backgroundColor:
                         t.palette.mode === "dark"
@@ -184,7 +236,11 @@ export default function NavbarMemorial({
                   <AccountCircle />
                 </IconButton>
 
-                <Menu anchorEl={anchorEl} open={openMenu} onClose={handleCloseMenu}>
+                <Menu
+                  anchorEl={anchorEl}
+                  open={openMenu}
+                  onClose={handleCloseMenu}
+                >
                   <MenuItem disabled>{user?.name || user?.email}</MenuItem>
                   <Divider />
                   <MenuItem
@@ -210,83 +266,97 @@ export default function NavbarMemorial({
           </Stack>
         </Toolbar>
       ) : (
-<Toolbar
-  sx={{
-    minHeight: { xs: 64, md: 76 },
-    px: { xs: 2, md: 4 },
-    display: "grid",
-    gridTemplateColumns: "48px 1fr 48px", // izq | centro (logo) | der (avatar)
-    alignItems: "center",
-  }}
->
-  <Box />
-
-  <Box
-    onClick={() => navigate("/")}
-    sx={{ display: "flex", justifyContent: "center", alignItems: "center", cursor: "pointer" }}
-  >
-    <AppLogo height={38} />
-  </Box>
-  <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-    {isAuthenticated && (
-      <>
-        <IconButton
-          size="large"
-          onClick={handleMenu}
-          aria-label="Cuenta de usuario"
-          sx={(t) => ({
-            backgroundColor: t.palette.contrast.main,
-            color: t.palette.contrast.contrastText,
-            borderRadius: 1,
-            width: 47,
-            height: 47,
-            transition: "transform .15s ease, background-color .15s ease, color .15s ease",
-            "&:hover": {
-              backgroundColor:
-                t.palette.mode === "dark"
-                  ? alpha(t.palette.contrast.main, 0.85)
-                  : alpha(t.palette.primary.main, 0.1),
-              color:
-                t.palette.mode === "dark"
-                  ? t.palette.primary.main
-                  : t.palette.text.primary,
-              transform: "scale(1.05)",
-            },
-            "&:active": { transform: "scale(0.97)" },
-          })}
+        <Toolbar
+          sx={{
+            minHeight: { xs: 64, md: 76 },
+            px: { xs: 2, md: 4 },
+            display: "grid",
+            gridTemplateColumns: "48px 1fr 48px", // izq | centro (logo) | der (avatar)
+            alignItems: "center",
+          }}
         >
-          <AccountCircle />
-        </IconButton>
+          <Box />
 
-        <Menu anchorEl={anchorEl} open={openMenu} onClose={handleCloseMenu}>
-          <MenuItem disabled>{user?.name || user?.email}</MenuItem>
-          <Divider />
-          <MenuItem
-            onClick={() => {
-              handleCloseMenu();
-              navigate("/dashboard");
+          <Box
+            onClick={() => navigate("/")}
+            sx={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              cursor: "pointer",
             }}
           >
-            Mi Panel
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              handleCloseMenu();
-              logout();
-            }}
-          >
-            <LogoutIcon fontSize="small" style={{ marginRight: 8 }} />
-            Cerrar sesión
-          </MenuItem>
-        </Menu>
-      </>
-    )}
-  </Box>
-</Toolbar>
+            <AppLogo height={38} />
+          </Box>
+          <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+            {isAuthenticated && (
+              <>
+                <IconButton
+                  size="large"
+                  onClick={handleMenu}
+                  aria-label="Cuenta de usuario"
+                  sx={(t) => ({
+                    backgroundColor: t.palette.contrast.main,
+                    color: t.palette.contrast.contrastText,
+                    borderRadius: 1,
+                    width: 47,
+                    height: 47,
+                    transition:
+                      "transform .15s ease, background-color .15s ease, color .15s ease",
+                    "&:hover": {
+                      backgroundColor:
+                        t.palette.mode === "dark"
+                          ? alpha(t.palette.contrast.main, 0.85)
+                          : alpha(t.palette.primary.main, 0.1),
+                      color:
+                        t.palette.mode === "dark"
+                          ? t.palette.primary.main
+                          : t.palette.text.primary,
+                      transform: "scale(1.05)",
+                    },
+                    "&:active": { transform: "scale(0.97)" },
+                  })}
+                >
+                  <AccountCircle />
+                </IconButton>
+
+                <Menu
+                  anchorEl={anchorEl}
+                  open={openMenu}
+                  onClose={handleCloseMenu}
+                >
+                  <MenuItem disabled>{user?.name || user?.email}</MenuItem>
+                  <Divider />
+                  <MenuItem
+                    onClick={() => {
+                      handleCloseMenu();
+                      navigate("/dashboard");
+                    }}
+                  >
+                    Mi Panel
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      handleCloseMenu();
+                      logout();
+                    }}
+                  >
+                    <LogoutIcon fontSize="small" style={{ marginRight: 8 }} />
+                    Cerrar sesión
+                  </MenuItem>
+                </Menu>
+              </>
+            )}
+          </Box>
+        </Toolbar>
       )}
 
       {/* ============== Drawer mobile (sin cambios) ============== */}
-      <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
+      <Drawer
+        anchor="left"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+      >
         <Box
           sx={{
             width: 300,
@@ -297,7 +367,15 @@ export default function NavbarMemorial({
           }}
         >
           {/* Header con marca y toggle */}
-          <Box sx={{ p: 3, borderBottom: `1px solid ${alpha(theme.palette.roles.outline, 0.8)}` }}>
+          <Box
+            sx={{
+              p: 3,
+              borderBottom: `1px solid ${alpha(
+                theme.palette.roles.outline,
+                0.8
+              )}`,
+            }}
+          >
             <Box sx={{ textAlign: "center" }}>
               <Box
                 component="div"
@@ -320,7 +398,13 @@ export default function NavbarMemorial({
                   }}
                   variant="soft"
                   color="contrast"
-                  startIcon={theme.palette.mode === "dark" ? <Brightness7Icon /> : <Brightness4Icon />}
+                  startIcon={
+                    theme.palette.mode === "dark" ? (
+                      <Brightness7Icon />
+                    ) : (
+                      <Brightness4Icon />
+                    )
+                  }
                   sx={{
                     fontFamily: `"Cormorant Garamond", serif`,
                     fontWeight: 700,

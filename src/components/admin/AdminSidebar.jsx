@@ -26,12 +26,18 @@ import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 // 🔹 Icono para Arqueos
 import ContentCutRoundedIcon from "@mui/icons-material/ContentCutRounded";
 
+// 🔹 Icono para Ítems (catálogo / conceptos)
+import Inventory2Icon from "@mui/icons-material/Inventory2";
+
 export const DRAWER_WIDTH = 240;
 
 // Nota: mantenemos claves existentes y agregamos nuevas.
 // Usá estas keys en tu contenedor para mostrar la vista correspondiente.
 export const SECTIONS = [
   { key: "clientes", label: "CLIENTES", icon: <PeopleAltIcon /> },
+
+  // 🔹 Nuevo: ABM de ítems (conceptos / productos / servicios)
+  { key: "items", label: "ITEMS", icon: <Inventory2Icon /> },
 
   // 🔹 Nuevo: Recibos (lista de recibos con PDF/WhatsApp)
   { key: "recibos", label: "RECIBOS", icon: <PictureAsPdfIcon /> },

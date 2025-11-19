@@ -20,7 +20,7 @@ export default function AboutUsSection() {
         const warn = theme.palette.warning.main;
 
         return {
-          minHeight: "100svh",
+          minHeight: "85svh",
           display: "grid",
           placeItems: "center",
           color: theme.palette.common.white,
@@ -40,7 +40,7 @@ export default function AboutUsSection() {
             ${primary}
           `,
           px: { xs: 2, md: 4 },
-          py: { xs: 8, md: 8 },
+          py: { xs: 4, md: 4 },
         };
       }}
     >
@@ -314,7 +314,7 @@ export default function AboutUsSection() {
               fontWeight: 700,
             }}
           >
-            Hablar a sucursal
+            Contactanos
           </Button>
 
           <Button

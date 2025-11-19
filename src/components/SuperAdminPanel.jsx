@@ -34,9 +34,13 @@ import ReceiptsSection from "./admin/sections/ReceiptsSection";
 import ArqueosSection from "./admin/sections/ArqueosSection";
 import CollectorDetailSection from "./admin/sections/CollectorDetailSection"; // <- verifica esta ruta
 
+// ⬇️ NUEVO: ABM de Ítems
+import ItemsSection from "./admin/sections/ItemsSection";
+
 // Claves visibles en sidebar
 const ALLOWED_KEYS = [
   "clientes",
+  "items", // ⬅️ NUEVO
   "transacciones",
   "diario",
   "outbox",
@@ -249,6 +253,9 @@ export default function SuperAdminPanel() {
             }}
           />
         )}
+
+        {/* NUEVO: ABM de Ítems */}
+        {section === "items" && <ItemsSection />}
 
         {section === "transacciones" && <TransactionsSection />}
         {section === "diario" && <LedgerSection />}

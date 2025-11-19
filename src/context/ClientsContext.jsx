@@ -247,48 +247,64 @@ export const ClientsProvider = ({ children }) => {
           : "family";
 
         const res = await getClienteById(id, { expand: optExpand });
-        const root = res?.data ?? res;
-        const item = pickItem(res);
-        if (!item?._id) throw new Error("Cliente no encontrado");
+        const root = res?.data ?? res; // payload crudo del backend ({data, family, __groupInfo})
 
-        // ✅ Priorizar __groupInfo (nuevo backend), luego groupInfo
+        const rawData = root?.data ?? root;
+        if (!rawData?._id) throw new Error("Cliente no encontrado");
+
+        // ✅ Priorizar __groupInfo del server
         const groupInfo =
           root?.__groupInfo ||
-          item?.__groupInfo ||
+          rawData?.__groupInfo ||
           root?.groupInfo ||
-          item?.groupInfo ||
+          rawData?.groupInfo ||
           null;
 
-        // Enriquecer con pricing local y groupInfo (si está)
-        const enriched = ensurePricingFields({
-          ...item,
-          ...(groupInfo ? { groupInfo } : {}),
-        });
+        const dataWithPricing = ensurePricingFields(rawData);
 
-        // family (si vino); si no, reconstruimos por idCliente
         const expandOpt = String(optExpand).toLowerCase();
         const wantsFamily =
           expandOpt === "family" ||
           expandOpt === "all" ||
           (expandOpt && expandOpt.split(",").includes("family"));
 
-        if (wantsFamily && item?.idCliente !== undefined) {
-          // ✅ Orden de fuentes corregido
-          let fam = root?.family ?? res?.family ?? res?.data?.family ?? null;
+        let familyArr = null;
 
-          if (!Array.isArray(fam) || fam.length === 0) {
-            fam = await loadFamilyByGroup(item.idCliente);
+        if (wantsFamily && rawData?.idCliente !== undefined) {
+          if (Array.isArray(root?.family) && root.family.length) {
+            familyArr = root.family.map(ensurePricingFields);
           } else {
-            fam = fam.map(ensurePricingFields);
+            familyArr = await loadFamilyByGroup(rawData.idCliente);
           }
-          enriched.__family = Array.isArray(fam) ? fam : [];
         }
 
-        // ✅ Guardar también __groupInfo para la UI
-        if (groupInfo) enriched.__groupInfo = groupInfo;
+        // Cliente enriquecido (lo que va a `current`)
+        const enrichedData = {
+          ...dataWithPricing,
+        };
 
-        setCurrentSafe(enriched);
-        return enriched;
+        if (groupInfo) {
+          enrichedData.groupInfo = groupInfo;
+          enrichedData.__groupInfo = groupInfo;
+        }
+        if (Array.isArray(familyArr)) {
+          enrichedData.__family = familyArr;
+        }
+
+        // Payload que devolvemos a quien llama (ClienteForm, etc.)
+        const result = {
+          ...root,
+          data: enrichedData,
+        };
+        if (Array.isArray(familyArr)) {
+          result.family = familyArr;
+        }
+        if (groupInfo) {
+          result.__groupInfo = groupInfo;
+        }
+
+        setCurrentSafe(enrichedData);
+        return result;
       } catch (e) {
         setErrSafe(
           e?.response?.data?.message || e?.message || "Error al cargar"

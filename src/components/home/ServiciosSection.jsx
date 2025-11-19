@@ -61,11 +61,11 @@ return (
       const isDark = t.palette.mode === "dark";
 
       return {
-        minHeight: "100svh",
+        minHeight: "85svh",
         display: "grid",
         placeItems: "center",
         px: { xs: 2, md: 4 },
-        py: { xs: 8, md: 8 },
+        py: { xs: 4, md: 4 },
 
         // color de texto correcto por modo
         color: isDark ? t.palette.common.white : t.palette.text.primary,

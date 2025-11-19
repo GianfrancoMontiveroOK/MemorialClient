@@ -95,7 +95,9 @@ const toDateInput = (d) => {
       : new Date(String(d));
   return Number.isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
 };
+
 const toNumOr = (v, fb) => (v === "" || v == null ? fb : Number(v));
+
 const calcAge = (dateStr) => {
   if (!dateStr) return "";
   const d = new Date(dateStr);
@@ -106,6 +108,7 @@ const calcAge = (dateStr) => {
   if (m < 0 || (m === 0 && t.getDate() < d.getDate())) a--;
   return Math.max(a, 0);
 };
+
 const toBool = (x) =>
   typeof x === "boolean"
     ? x
@@ -135,29 +138,56 @@ export default function ClienteForm() {
 
     (async () => {
       try {
-        const data = await loadOne(id, { expand: "family" });
+        // El backend devuelve { data, family, __groupInfo }
+        const payload = await loadOne(id, { expand: "family" });
 
-        // Set de valores del form
+        const doc = payload?.data || {};
+        const family = Array.isArray(payload?.family) ? payload.family : [];
+
+        // Normalizar integrantes para el form (edición)
+        const normIntegrante = (m) => ({
+          _id: m?._id, // importante para upsert en backend
+          nombre: (m?.nombre || "").toString(),
+          documento: (m?.documento || "").toString(),
+          docTipo: m?.docTipo || "DNI",
+          fechaNac: toDateInput(m?.fechaNac),
+          edad: Number.isFinite(Number(m?.edad))
+            ? Number(m.edad)
+            : calcAge(toDateInput(m?.fechaNac)),
+          sexo: m?.sexo || "X",
+          cuil: m?.cuil || "",
+          telefono: m?.telefono || "",
+          domicilio: m?.domicilio || "",
+          ciudad: m?.ciudad || "",
+          provincia: m?.provincia || "",
+          cp: m?.cp || "",
+          observaciones: m?.observaciones || "",
+          cremacion: toBool(m?.cremacion),
+          parcela: toBool(m?.parcela),
+          activo: m?.activo !== false,
+        });
+
+        // Set de valores del form (titular/integrante + familiares)
         setValues((v) => ({
           ...v,
-          ...data,
-          ingreso: toDateInput(data?.ingreso),
-          vigencia: toDateInput(data?.vigencia),
-          baja: toDateInput(data?.baja),
-          fechaAumento: toDateInput(data?.fechaAumento),
-          fechaNac: toDateInput(data?.fechaNac),
-          cremacion: toBool(data?.cremacion),
-          parcela: toBool(data?.parcela),
-          factura: toBool(data?.factura),
-          emergencia: toBool(data?.emergencia),
-          tarjeta: toBool(data?.tarjeta),
-          activo: data?.activo !== false,
-          cuotaIdeal: data?.cuotaIdeal ?? "",
-          integrantes: [], // en edición no se editan acá
+          ...doc,
+          ingreso: toDateInput(doc?.ingreso),
+          vigencia: toDateInput(doc?.vigencia),
+          baja: toDateInput(doc?.baja),
+          fechaAumento: toDateInput(doc?.fechaAumento),
+          fechaNac: toDateInput(doc?.fechaNac),
+          cremacion: toBool(doc?.cremacion),
+          parcela: toBool(doc?.parcela),
+          factura: toBool(doc?.factura),
+          emergencia: toBool(doc?.emergencia),
+          tarjeta: toBool(doc?.tarjeta),
+          activo: doc?.activo !== false,
+          cuotaIdeal: doc?.cuotaIdeal ?? "",
+          integrantes: family.map(normIntegrante),
         }));
 
         // Preferí la meta del server; si no llegara, calculo fallback desde 'family'
-        const gInfo = data?.__groupInfo || data?.groupInfo || null;
+        const gInfo = payload?.__groupInfo || payload?.groupInfo || null;
 
         if (
           gInfo &&
@@ -172,8 +202,7 @@ export default function ClienteForm() {
           });
         } else {
           // Fallback local (solo si el server no lo trajo)
-          const family = Array.isArray(data?.family) ? data.family : [];
-          const titular = data || {};
+          const titular = doc || {};
 
           const isValidDate = (v) => {
             if (!v) return false;
@@ -181,12 +210,12 @@ export default function ClienteForm() {
             return !Number.isNaN(d.getTime());
           };
           const isActive = (m) => m?.activo !== false && !isValidDate(m?.baja);
-          const ALLOWED = new Set(["TITULAR", "INTEGRANTE"]);
+          const ROL_ALLOWED = new Set(["TITULAR", "INTEGRANTE"]);
 
           const miembros = [titular, ...family]
             .filter(Boolean)
             .filter(isActive)
-            .filter((m) => ALLOWED.has(m?.rol));
+            .filter((m) => ROL_ALLOWED.has(m?.rol));
 
           const integrantesCount = miembros.length;
           const cremacionesCount = miembros.reduce(
@@ -213,7 +242,7 @@ export default function ClienteForm() {
 
           const edadMax = edades.length
             ? Math.max(...edades)
-            : Number(data?.edad) || 0;
+            : Number(titular?.edad) || 0;
 
           setServerGroupInfo({ integrantesCount, cremacionesCount, edadMax });
         }
@@ -234,7 +263,7 @@ export default function ClienteForm() {
     setValues((v) => ({ ...v, [field]: value }));
   };
 
-  // Integrantes (solo en “nuevo”)
+  // Integrantes (nuevo y edición)
   const pushIntegrante = () =>
     setValues((v) => ({
       ...v,
@@ -303,10 +332,10 @@ export default function ClienteForm() {
       const clip = (val, set, def) => (set.has(val) ? val : def);
       const n = (v, fb) => (v === "" || v == null ? fb : Number(v));
 
-      // Construimos payload limpio (sin cuotaIdeal y sin integrantes en edit)
+      // Construimos payload limpio (sin cuotaIdeal; la calcula el server)
       const payload = {
         ...values,
-        cuotaIdeal: undefined, // la calcula el server
+        cuotaIdeal: undefined,
         idCliente: toNumOr(values.idCliente, undefined),
         idCobrador: toNumOr(values.idCobrador, undefined),
         edad: toNumOr(values.edad, undefined),
@@ -329,22 +358,20 @@ export default function ClienteForm() {
             ? values.provincia
             : "",
         nombre: values.nombre?.toString().trim().toUpperCase(),
-        integrantes: isEdit
-          ? undefined
-          : (values.integrantes || []).map((m) => ({
-              ...m,
-              edad: n(m.edad, undefined),
-              documento: (m.documento || "").toString().trim(),
-              nombre: (m.nombre || "").toString().trim().toUpperCase(),
-              docTipo: clip(m.docTipo || "DNI", ALLOWED.docTipo, "DNI"),
-              sexo: clip(m.sexo || "X", ALLOWED.sexo, "X"),
-              provincia:
-                m.provincia && ALLOWED.provincia.has(m.provincia)
-                  ? m.provincia
-                  : "",
-              cremacion: Boolean(m.cremacion),
-              parcela: Boolean(m.parcela),
-            })),
+        integrantes: (values.integrantes || []).map((m) => ({
+          ...m, // mantiene _id si viene, para upsert
+          edad: n(m.edad, undefined),
+          documento: (m.documento || "").toString().trim(),
+          nombre: (m.nombre || "").toString().trim().toUpperCase(),
+          docTipo: clip(m.docTipo || "DNI", ALLOWED.docTipo, "DNI"),
+          sexo: clip(m.sexo || "X", ALLOWED.sexo, "X"),
+          provincia:
+            m.provincia && ALLOWED.provincia.has(m.provincia)
+              ? m.provincia
+              : "",
+          cremacion: Boolean(m.cremacion),
+          parcela: Boolean(m.parcela),
+        })),
       };
 
       // Limpieza final
@@ -361,12 +388,6 @@ export default function ClienteForm() {
       console.error(e2);
     }
   };
-
-  // 👉 contador de grupo (solo “nuevo”)
-  const groupCount = values.integrantes.length;
-  const groupCremCount =
-    values.integrantes.filter((m) => m.cremacion).length +
-    (values.cremacion ? 1 : 0);
 
   return (
     <Paper sx={{ p: { xs: 2, md: 3 }, borderRadius: 3 }}>
@@ -416,18 +437,17 @@ export default function ClienteForm() {
         />
 
         {/* 2) Familiares (antes que precios) */}
-        {!isEdit && (
-          <Familiares
-            values={values}
-            DOC_TIPOS={DOC_TIPOS}
-            PROVINCIAS={PROVINCIAS}
-            SEXO_OPTS={SEXO_OPTS}
-            pushIntegrante={pushIntegrante}
-            updateIntegrante={updateIntegrante}
-            removeIntegrante={removeIntegrante}
-            onSummaryChange={setLocalGroupInfo} // ⬅️ recibe {integrantesCount, cremacionesCount, edadMax}
-          />
-        )}
+        <Familiares
+          isEdit={isEdit}
+          values={values}
+          DOC_TIPOS={DOC_TIPOS}
+          PROVINCIAS={PROVINCIAS}
+          SEXO_OPTS={SEXO_OPTS}
+          pushIntegrante={pushIntegrante}
+          updateIntegrante={updateIntegrante}
+          removeIntegrante={removeIntegrante}
+          onSummaryChange={setLocalGroupInfo} // nuevo: local summary solo en "nuevo"
+        />
 
         {/* 3) Precio & Cobranzas */}
         <ProductoYPrecio
@@ -462,7 +482,6 @@ export default function ClienteForm() {
           <Stack direction="row" justifyContent="flex-end" spacing={1}>
             <Button
               variant="cancel"
-              // 👉 Siempre volver al Dashboard
               onClick={() => navigate("/dashboard")}
               disabled={loading}
             >

@@ -15,6 +15,7 @@ import {
 
 // Layout / guard
 import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
 import ProtectedRoute from "./ProtectedRoute";
 
 // Rutas públicas
@@ -35,7 +36,7 @@ import ClienteDetalle from "./pages/ClienteDetalle";
 import CollectorClientsTable from "./components/CollectorClientsTable";
 import CollectorClientDetail from "./pages/CollectorClientDetail";
 
-const theme = getTheme("light");
+const theme = getTheme("dark");
 
 // ⬇️ Scope específico para las pantallas de cobrador
 // Envuelve todas las rutas hijas con CollectorProvider.
@@ -125,6 +126,7 @@ function App() {
                 </Route>
               </Route>
             </Routes>
+            <Footer/>
           </HashRouter>
         </DashboardProvider>
       </AuthProvider>

@@ -202,7 +202,7 @@ Mensaje: ${values.mensaje || "-"}`;
       component="section"
       sx={(t) => ({
         position: "relative",
-        py: { xs: 6, md: 10 },
+        py: { xs: 6, md: 6 },
         // centrado visual con margen auto y ancho moderado del contenido
         display: "flex",
         justifyContent: "center",
@@ -271,6 +271,7 @@ Mensaje: ${values.mensaje || "-"}`;
                   fontWeight: 800,
                   letterSpacing: 2,
                   textAlign: "center",
+                  paddingTop: 2,
                 }}
               >
                 Contacto
@@ -282,6 +283,7 @@ Mensaje: ${values.mensaje || "-"}`;
                   textAlign: "center",
                   color: (t) =>
                     t.palette.mode === "dark" ? t.palette.common.white : "#111",
+                  paddingTop: 2,
                 }}
               >
                 Estamos para acompañarte
@@ -290,6 +292,7 @@ Mensaje: ${values.mensaje || "-"}`;
                 sx={{
                   mt: 0.5,
                   textAlign: "center",
+                  paddingBottom: 2,
                   color: (t) =>
                     t.palette.mode === "dark"
                       ? alpha("#fff", 0.72)
@@ -366,6 +369,7 @@ Mensaje: ${values.mensaje || "-"}`;
                         ? alpha("#fff", 0.72)
                         : "rgba(0,0,0,0.62)",
                     display: "block",
+                    py: 3,
                     textAlign: "center",
                   }}
                   control={
@@ -392,8 +396,8 @@ Mensaje: ${values.mensaje || "-"}`;
                     ENVIAR DATOS
                   </Button>
                   <Button
-                    variant="contained"
-                    color="primary"
+                    variant="outlined"
+                    color="white"
                     size="large"
                     startIcon={<WhatsAppIcon />}
                     href={wsp(wspMsg)}
@@ -403,33 +407,6 @@ Mensaje: ${values.mensaje || "-"}`;
                     WHATSAPP OFICINAS
                   </Button>
                 </Stack>
-                <Divider
-                  sx={{
-                    my: 3,
-                    opacity: (t) => (t.palette.mode === "dark" ? 0.12 : 0.2),
-                  }}
-                />
-
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "center",
-                    alignItems: "center",
-                  }}
-                >
-                  <Box
-                    sx={(t) => ({
-                      width: 300, 
-                      opacity: t.palette.mode === "dark" ? 0.9 : 0.85,
-                      filter:
-                        t.palette.mode === "dark"
-                          ? "drop-shadow(0 2px 6px rgba(0,0,0,.45))"
-                          : "grayscale(0.1)",
-                    })}
-                  >
-                    <AppLogo height={50}/>
-                  </Box>
-                </Box>
               </Box>
             </Paper>
           </Grid>
@@ -541,21 +518,11 @@ Mensaje: ${values.mensaje || "-"}`;
               >
                 <Button
                   variant="contained"
-                  color="primary"
-                  startIcon={<WhatsAppIcon />}
-                  href={wsp("Hola, quisiera realizar una consulta a Memorial.")}
-                  target="_blank"
-                  rel="noopener"
-                >
-                  WHATSAPP
-                </Button>
-                <Button
-                  variant="contained"
-                  color="primary"
+                  color="warning"
                   startIcon={<PhoneInTalkOutlinedIcon />}
                   href={PHONE_LINK}
                 >
-                  LLAMAR
+                  LLAMAR AHORA
                 </Button>
               </Stack>
             </Paper>

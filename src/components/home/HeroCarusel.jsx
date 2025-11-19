@@ -150,7 +150,7 @@ export default function HeroCarousel({
             {isMdUp && (
               <Button
                 size="large"
-                variant="contained"
+                variant="outlined"
                 color="inherit"
                 component={RouterLink}
                 to="/servicios"
@@ -158,7 +158,6 @@ export default function HeroCarousel({
                 sx={{
                   px: 3,
                   fontWeight: 700,
-                  backgroundColor: "#3f4447",
                   color: "#F7F7F7",
                   "&:hover": { backgroundColor: "#F7F7F7", color: "#3f4447" },
                 }}

@@ -40,6 +40,7 @@ const normalizePhone = (s = "") => {
 };
 
 export default function Familiares({
+  isEdit, // nuevo vs edición
   values,
   DOC_TIPOS,
   PROVINCIAS,
@@ -47,9 +48,9 @@ export default function Familiares({
   pushIntegrante,
   updateIntegrante,
   removeIntegrante,
-  onSummaryChange, // ⬅️ NUEVO: callback para enviar resumen al padre
+  onSummaryChange, // usado solo en "nuevo" para Pricing
 }) {
-  // ===== Resumen local para Precio (solo en "nuevo") =====
+  // ===== Meta local de grupo (para Precio en "nuevo") =====
   const integrantes = Array.isArray(values?.integrantes)
     ? values.integrantes
     : [];
@@ -73,9 +74,12 @@ export default function Familiares({
   const edadMax = edades.length ? Math.max(...edades) : 0;
 
   useEffect(() => {
-    // Emitimos el summary hacia arriba para que ProductoYPrecio lo use como serverGroupInfo
-    onSummaryChange?.({ integrantesCount, cremacionesCount, edadMax });
-  }, [onSummaryChange, integrantesCount, cremacionesCount, edadMax]);
+    // En "nuevo" usamos este summary para ProductoYPrecio (localGroupInfo).
+    // En "editar" ya viene __groupInfo desde el servidor, así que no hace falta.
+    if (!isEdit) {
+      onSummaryChange?.({ integrantesCount, cremacionesCount, edadMax });
+    }
+  }, [isEdit, onSummaryChange, integrantesCount, cremacionesCount, edadMax]);
 
   // Normalizadores onBlur por integrante
   const blur = (idx, field, v) => updateIntegrante(idx, field, v);
@@ -105,7 +109,6 @@ export default function Familiares({
         <Typography variant="h6" fontWeight={700}>
           Integrantes del grupo (opcional)
         </Typography>
-        {/* ⬇️ SIN CHIPS */}
       </Stack>
 
       <Divider sx={{ mb: 2 }} />

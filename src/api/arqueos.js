@@ -188,6 +188,7 @@ export async function downloadArqueoUsuarioClientesCSV({
     ...(userId ? { userId } : {}),
     ...(idCobrador != null ? { idCobrador: String(idCobrador) } : {}),
     full: "1", // por si lo usás para otras variantes
+    ...rest,
   };
   const resp = await axios.get("/admin/arqueos/usuarios/clientes-csv", {
     params,
@@ -205,5 +206,88 @@ export async function downloadArqueoUsuarioClientesCSV({
   URL.revokeObjectURL(url);
 }
 
+/* ========= NUEVAS RUTAS: Caja chica / Caja grande ========== */
+
+/**
+ * Depósito a CAJA_CHICA (admin sobre sí mismo o superAdmin sobre un admin)
+ * POST /admin/caja/chica/deposito
+ */
+export function depositoCajaChica({
+  adminUserId,
+  amount,
+  currency = "ARS",
+  note = "",
+} = {}) {
+  const data = makeParams({ adminUserId, amount, currency, note });
+  return axios.post("/admin/caja/chica/deposito", data, {
+    withCredentials: true,
+    headers: noStoreHeaders,
+  });
+}
+
+/**
+ * Ingreso a CAJA_GRANDE (superAdmin mueve desde CAJA_CHICA de un admin)
+ * POST /admin/caja/grande/ingreso
+ */
+export function ingresoCajaGrande({
+  fromAdminUserId,
+  amount,
+  currency = "ARS",
+  note = "",
+  toSuperAdminUserId, // opcional: por si el vault owner es otro SA
+} = {}) {
+  const data = makeParams({
+    fromAdminUserId,
+    amount,
+    currency,
+    note,
+    toSuperAdminUserId,
+  });
+  return axios.post("/admin/caja/grande/ingreso", data, {
+    withCredentials: true,
+    headers: noStoreHeaders,
+  });
+}
+
+/**
+ * Extracción desde CAJA_GRANDE hacia CAJA_SUPERADMIN (billetera del SA)
+ * POST /admin/caja/grande/extraccion
+ */
+export function extraccionCajaGrande({
+  amount,
+  currency = "ARS",
+  note = "",
+  superAdminUserId, // opcional
+} = {}) {
+  const data = makeParams({ amount, currency, note, superAdminUserId });
+  return axios.post("/admin/caja/grande/extraccion", data, {
+    withCredentials: true,
+    headers: noStoreHeaders,
+  });
+}
+// ...
+export function getGlobalCajasBalance({ dateFrom, dateTo } = {}) {
+  const params = {};
+  if (dateFrom) params.dateFrom = dateFrom;
+  if (dateTo) params.dateTo = dateTo;
+
+  return axios.get("/admin/arqueos/global-cajas-balance", {
+    params,
+    withCredentials: true,
+    headers: noStoreHeaders,
+  });
+}
+// NUEVO: totales GLOBAL(ES) por accountCodes (ej: "CAJA_CHICA" o "CAJA_GRANDE")
+export function getArqueoGlobalTotals({ accountCodes, dateFrom, dateTo } = {}) {
+  const params = {};
+  if (accountCodes) params.accountCodes = accountCodes;
+  if (dateFrom) params.dateFrom = dateFrom;
+  if (dateTo) params.dateTo = dateTo;
+  return axios.get("/admin/arqueos/global-totals", {
+    params,
+    withCredentials: true,
+    headers: { "Cache-Control": "no-cache" },
+  });
+}
 /* ========================= Exports útiles =================== */
 export const __arqueosUtils = { packAccountCodes, makeParams };

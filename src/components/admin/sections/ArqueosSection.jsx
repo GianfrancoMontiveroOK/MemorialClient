@@ -20,15 +20,23 @@ import {
 } from "@mui/material";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
-import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
-import { listArqueosUsuarios } from "../../../api/arqueos";
+import DomainRoundedIcon from "@mui/icons-material/DomainRounded";
+import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
+import AdminPanelSettingsRoundedIcon from "@mui/icons-material/AdminPanelSettingsRounded";
+import PersonPinCircleRoundedIcon from "@mui/icons-material/PersonPinCircleRounded";
+
+import PersonalCajaCard from "./PersonalCajaCard.jsx";
+import { useAuth } from "../../../context/AuthContext";
+import { listArqueosUsuarios } from "../../../api/arqueos.js";
 
 const ROLE_OPTIONS = [
   { value: "", label: "Todos" },
   { value: "superAdmin", label: "SuperAdmin" },
   { value: "admin", label: "Admin" },
   { value: "cobrador", label: "Cobrador" },
+  // Si alguna vez querés filtrar globales desde UI:
+  // { value: "global", label: "Global (cajas)" },
 ];
 
 const fmtMoney = (n) =>
@@ -48,7 +56,7 @@ const fmtDate = (d) => {
         .slice(0, 5)}`;
 };
 
-// Suma totales a partir de boxes [{ currency, debits, credits, balance, lastMovementAt, paymentsCount }]
+// Suma totales a partir de boxes
 function computeTotals(row) {
   const boxes = Array.isArray(row?.boxes) ? row.boxes : [];
   let deb = 0;
@@ -67,15 +75,93 @@ function computeTotals(row) {
       if (!last || t > last) last = t;
     }
   }
-
-  if (typeof row?.totalBalance === "number") {
+  if (typeof row?.totalBalance === "number")
     net = Number(row.totalBalance || 0);
-  }
-
   return { deb, cred, net, last, moves };
 }
 
+/** Orden lógico que pediste.
+ *  0: CAJA_GRANDE (GLOBAL)
+ *  1: CAJA_CHICA  (GLOBAL)
+ *  2: superAdmin
+ *  3: admin
+ *  4: cobrador
+ *  5: otros
+ */
+function orderRank(row) {
+  const id = String(row?._id || "");
+  const role = String(row?.role || "");
+  if (id === "GLOBAL:CAJA_GRANDE") return 0;
+  if (id === "GLOBAL:CAJA_CHICA") return 1;
+  if (role === "superAdmin") return 2;
+  if (role === "admin") return 3;
+  if (role === "cobrador") return 4;
+  return 5;
+}
+
+// Detección de fila global
+const isGlobalRow = (row) =>
+  row?.role === "global" || String(row?._id || "").startsWith("GLOBAL:");
+
+// Chip del rol con icono
+function RoleChip({ row }) {
+  const id = String(row?._id || "");
+  const role = String(row?.role || "");
+  if (id === "GLOBAL:CAJA_GRANDE")
+    return (
+      <Chip
+        size="small"
+        icon={<DomainRoundedIcon />}
+        color="secondary"
+        label="CAJA_GRANDE (GLOBAL)"
+        variant="outlined"
+      />
+    );
+  if (id === "GLOBAL:CAJA_CHICA")
+    return (
+      <Chip
+        size="small"
+        icon={<DomainRoundedIcon />}
+        color="secondary"
+        label="CAJA_CHICA (GLOBAL)"
+        variant="outlined"
+      />
+    );
+  if (role === "superAdmin")
+    return (
+      <Chip
+        size="small"
+        icon={<ShieldRoundedIcon />}
+        color="success"
+        label="superAdmin"
+        variant="outlined"
+      />
+    );
+  if (role === "admin")
+    return (
+      <Chip
+        size="small"
+        icon={<AdminPanelSettingsRoundedIcon />}
+        color="primary"
+        label="admin"
+        variant="outlined"
+      />
+    );
+  if (role === "cobrador")
+    return (
+      <Chip
+        size="small"
+        icon={<PersonPinCircleRoundedIcon />}
+        color="default"
+        label="cobrador"
+        variant="outlined"
+      />
+    );
+  return <Chip size="small" label={role || "—"} />;
+}
+
 export default function ArqueosSection({ onOpenCollectorDetail }) {
+  const { user } = useAuth() || {};
   const [items, setItems] = React.useState([]);
   const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(0); // 0-based UI
@@ -106,7 +192,7 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
       setTotal(res?.data?.total || 0);
     } catch (e) {
       console.error(e);
-      alert(
+      window.alert(
         e?.response?.data?.message ||
           e?.message ||
           "No se pudieron cargar los arqueos"
@@ -126,25 +212,34 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
   };
 
   const handleOpenDetail = (row) => {
-    const userId = row?._id ? String(row._id) : null;
-    if (!userId) return;
     const user = {
-      userId, // 🔴 clave: usar _id real de Mongo
-      idCobrador: row?.idCobrador ?? null,
+      userId: row?._id,
       name: row?.name || row?.userName || "",
       email: row?.email || "",
       role: row?.role || "",
     };
-    if (typeof onOpenCollectorDetail === "function") {
-      onOpenCollectorDetail({ user, dateFrom, dateTo });
-    } else {
-      console.warn("onOpenCollectorDetail no fue provisto", {
-        user,
-        dateFrom,
-        dateTo,
-      });
-    }
+    onOpenCollectorDetail?.({ user, dateFrom, dateTo });
   };
+
+  // 🔽 Ordenamos localmente para forzar la jerarquía pedida
+  const sortedItems = React.useMemo(() => {
+    const clone = Array.isArray(items) ? [...items] : [];
+    clone.sort((a, b) => {
+      const ra = orderRank(a);
+      const rb = orderRank(b);
+      if (ra !== rb) return ra - rb;
+
+      // Dentro del mismo bloque, ordenamos por saldo neto desc y luego por nombre asc
+      const na = Number(a?.totalBalance ?? 0);
+      const nb = Number(b?.totalBalance ?? 0);
+      if (na !== nb) return nb - na;
+
+      const an = String(a?.name || a?.email || a?._id || "");
+      const bn = String(b?.name || b?.email || b?._id || "");
+      return an.localeCompare(bn, "es");
+    });
+    return clone;
+  }, [items]);
 
   return (
     <Box>
@@ -168,6 +263,13 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
           </Button>
         </Stack>
       </Stack>
+
+      {/* Card personal + global */}
+      <PersonalCajaCard
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onMoved={fetchData}
+      />
 
       {/* Filtros */}
       <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, mb: 1.5 }}>
@@ -239,7 +341,7 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
             </TableRow>
           </TableHead>
           <TableBody>
-            {(!items || items.length === 0) && (
+            {(!sortedItems || sortedItems.length === 0) && (
               <TableRow>
                 <TableCell colSpan={9}>
                   <Box py={3} textAlign="center" color="text.secondary">
@@ -249,53 +351,75 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
               </TableRow>
             )}
 
-            {items.map((r) => {
+            {sortedItems.map((r) => {
               const { deb, cred, net, last, moves } = computeTotals(r);
-              const mongoId = r?._id ? String(r._id) : null;
+              const mongoId =
+                r?._id && /^[a-f0-9]{24}$/i.test(String(r._id))
+                  ? String(r._id)
+                  : null;
+
+              const global = isGlobalRow(r);
+
               return (
                 <TableRow
-                  key={mongoId || String(r.name || r.email || Math.random())}
+                  key={String(r._id || r.name || r.email || Math.random())}
+                  sx={
+                    global
+                      ? {
+                          "& td": {
+                            bgcolor: (t) =>
+                              t.palette.mode === "dark"
+                                ? "rgba(255,255,255,0.03)"
+                                : "rgba(0,0,0,0.03)",
+                          },
+                          "&:hover td": {
+                            bgcolor: (t) =>
+                              t.palette.mode === "dark"
+                                ? "rgba(255,255,255,0.05)"
+                                : "rgba(0,0,0,0.05)",
+                          },
+                        }
+                      : undefined
+                  }
                 >
                   <TableCell>
-                    <Stack direction="row" spacing={1} alignItems="center">
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                      flexWrap="wrap"
+                    >
                       <Chip
                         size="small"
                         variant="outlined"
                         label={String(r.name || r.userName || "—")}
                       />
-                      <Typography variant="body2" color="text.secondary">
-                        {r.email || "—"}
-                      </Typography>
-                    </Stack>
-                  </TableCell>
-
-                  <TableCell>
-                    <Stack spacing={0.5}>
-                      <Typography
-                        variant="caption"
-                        sx={{ fontFamily: "monospace" }}
-                        title={mongoId || "—"}
-                      >
-                        {mongoId
-                          ? `${mongoId.slice(0, 6)}…${mongoId.slice(-4)}`
-                          : "—"}
-                      </Typography>
-                      {r?.idCobrador != null && (
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          label={`idCobrador: ${r.idCobrador}`}
-                        />
+                      {!global && (
+                        <Typography variant="body2" color="text.secondary">
+                          {r.email || "—"}
+                        </Typography>
                       )}
                     </Stack>
                   </TableCell>
 
+                  <TableCell title={String(r._id || "—")}>
+                    <Typography
+                      variant="caption"
+                      sx={{ fontFamily: "monospace" }}
+                    >
+                      {mongoId
+                        ? `${mongoId.slice(0, 6)}…${mongoId.slice(-4)}`
+                        : String(r._id || "—")}
+                    </Typography>
+                  </TableCell>
+
                   <TableCell>
-                    <Chip size="small" label={r.role || "—"} />
+                    <RoleChip row={r} />
                   </TableCell>
 
                   <TableCell align="right">{fmtMoney(deb)}</TableCell>
                   <TableCell align="right">{fmtMoney(cred)}</TableCell>
+
                   <TableCell
                     align="right"
                     style={{
@@ -305,15 +429,34 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
                   >
                     {fmtMoney(net)}
                   </TableCell>
+
                   <TableCell align="right">{Number(moves || 0)}</TableCell>
                   <TableCell>{fmtDate(last)}</TableCell>
+
                   <TableCell align="center">
                     <Button
                       size="small"
                       variant="outlined"
                       startIcon={<VisibilityRoundedIcon />}
-                      onClick={() => handleOpenDetail(r)}
-                      disabled={!mongoId}
+                      onClick={() =>
+                        onOpenCollectorDetail?.({
+                          user: {
+                            userId: r?._id,
+                            name: r?.name,
+                            email: r?.email,
+                            role: r?.role,
+                          },
+                          dateFrom,
+                          dateTo,
+                        })
+                      }
+                      // Habilitamos detalle también para GLOBAL
+                      disabled={false}
+                      title={
+                        global
+                          ? "Ver detalle global"
+                          : "Ver detalle del usuario"
+                      }
                     >
                       Detalle
                     </Button>
@@ -360,7 +503,7 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
           <Pagination
             color="primary"
             page={page + 1}
-            count={totalPages}
+            count={Math.max(1, totalPages)}
             onChange={(_, p1) => setPage(p1 - 1)}
           />
         </Stack>
