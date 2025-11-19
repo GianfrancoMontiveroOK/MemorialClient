@@ -50,10 +50,49 @@ export const listAdminPayments = ({
   if (method) params.method = method;
   if (status) params.status = status;
 
-  // ⚠️ Backend correcto: /api/adminTransactions/transactions
+  // Backend: app.use("/api/adminTransactions", adminTransactionsRoutes)
+  // -> endpoint real: /api/adminTransactions/transactions
   return axios.get("/adminTransactions/transactions", {
     params,
     withCredentials: true,
     headers: noStoreHeaders,
+  });
+};
+
+/* ========= NUEVO: importaciones bancarias (Naranja / Banco Nación) ========= */
+
+/**
+ * Importa un archivo TXT de Naranja (DAR/DAF).
+ * Espera que el backend tenga POST /api/adminTransactions/import-naranja
+ * con campo "file" (multer).
+ */
+export const importNaranjaResultFile = (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return axios.post("/adminTransactions/import-naranja", formData, {
+    withCredentials: true,
+    headers: {
+      ...noStoreHeaders,
+      "Content-Type": "multipart/form-data",
+    },
+  });
+};
+
+/**
+ * Importa un archivo TXT de Banco Nación.
+ * Espera que el backend tenga POST /api/adminTransactions/import-bna
+ * con campo "file".
+ */
+export const importBancoNacionResultFile = (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return axios.post("/adminTransactions/import-bna", formData, {
+    withCredentials: true,
+    headers: {
+      ...noStoreHeaders,
+      "Content-Type": "multipart/form-data",
+    },
   });
 };

@@ -7,7 +7,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { listAdminPayments, listCollectorPayments } from "../api/transactions";
+import {
+  listAdminPayments,
+  listCollectorPayments,
+  importNaranjaResultFile,
+  importBancoNacionResultFile,
+} from "../api/transactions";
 import { createCollectorPayment } from "../api/collector"; // opcional (MVP)
 
 /* ============================= Contexto ============================= */
@@ -62,12 +67,13 @@ export function TransactionsProvider({ children, scope = "admin" }) {
   const [dateFrom, setDateFrom] = useState(""); // "YYYY-MM-DD"
   const [dateTo, setDateTo] = useState("");
   const [clientId, setClientId] = useState(""); // _id miembro (Mongo)
-  const [method, setMethod] = useState(""); // efectivo|transferencia|tarjeta|qr|otro
+  const [method, setMethod] = useState(""); // efectivo|transferencia|tarjeta|qr|otro|debito_automatico
   const [status, setStatus] = useState(""); // draft|posted|settled|reversed
 
   // flags
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false); // NUEVO
   const [err, setErr] = useState("");
 
   // selección (opcional)
@@ -87,6 +93,7 @@ export function TransactionsProvider({ children, scope = "admin" }) {
   const setTotalSafe = safe(setTotal);
   const setLoadingSafe = safe(setLoading);
   const setSavingSafe = safe(setSaving);
+  const setImportingSafe = safe(setImporting);
   const setErrSafe = safe(setErr);
 
   // elegir el fetcher según scope
@@ -229,6 +236,69 @@ export function TransactionsProvider({ children, scope = "admin" }) {
     status,
   ]);
 
+  /* --------- importación de archivos (Naranja / Banco Nación) --------- */
+
+  const importNaranja = useCallback(
+    async (file) => {
+      if (!file) return { ok: false, message: "No se seleccionó archivo" };
+      setImportingSafe(true);
+      setErrSafe("");
+      try {
+        const resp = await importNaranjaResultFile(file);
+        const data = resp?.data ?? {};
+        if (data.ok === false) {
+          const msg =
+            data.message || "Error al importar archivo de Naranja (backend)";
+          setErrSafe(msg);
+          return { ok: false, message: msg, data };
+        }
+        await refresh();
+        return data;
+      } catch (e) {
+        const msg =
+          e?.response?.data?.message ||
+          e?.message ||
+          "Error inesperado al importar archivo de Naranja";
+        setErrSafe(msg);
+        return { ok: false, message: msg };
+      } finally {
+        setImportingSafe(false);
+      }
+    },
+    [refresh]
+  );
+
+  const importBancoNacion = useCallback(
+    async (file) => {
+      if (!file) return { ok: false, message: "No se seleccionó archivo" };
+      setImportingSafe(true);
+      setErrSafe("");
+      try {
+        const resp = await importBancoNacionResultFile(file);
+        const data = resp?.data ?? {};
+        if (data.ok === false) {
+          const msg =
+            data.message ||
+            "Error al importar archivo de Banco Nación (backend)";
+          setErrSafe(msg);
+          return { ok: false, message: msg, data };
+        }
+        await refresh();
+        return data;
+      } catch (e) {
+        const msg =
+          e?.response?.data?.message ||
+          e?.message ||
+          "Error inesperado al importar archivo de Banco Nación";
+        setErrSafe(msg);
+        return { ok: false, message: msg };
+      } finally {
+        setImportingSafe(false);
+      }
+    },
+    [refresh]
+  );
+
   /* --------------------- createPayment (opcional/MVP) --------------------- */
   // Útil si quisieras registrar un cobro desde este contexto (para cobrador).
   const createPayment = useCallback(
@@ -281,6 +351,7 @@ export function TransactionsProvider({ children, scope = "admin" }) {
     // flags
     loading,
     saving,
+    importing,
     err,
 
     // setters
@@ -303,6 +374,10 @@ export function TransactionsProvider({ children, scope = "admin" }) {
     fetchPayments,
     refresh,
     createPayment, // opcional (para cobradores/MVP)
+
+    // importaciones bancarias (usadas por TransactionsSection)
+    importNaranja,
+    importBancoNacion,
   };
 
   return (

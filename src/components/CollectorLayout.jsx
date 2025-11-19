@@ -25,7 +25,12 @@ const SECTIONS = [
   { key: "cobros", label: "Cobros", icon: <PaymentsIcon /> },
 ];
 
-export default function CollectorLayout({ section, onChangeSection, children, title = "Cobrador" }) {
+export default function CollectorLayout({
+  section,
+  onChangeSection,
+  children,
+  title = "Cobrador",
+}) {
   const theme = useTheme();
   const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
   const [mobileOpen, setMobileOpen] = React.useState(false);
@@ -56,7 +61,9 @@ export default function CollectorLayout({ section, onChangeSection, children, ti
               <ListItemIcon sx={{ minWidth: 40 }}>{s.icon}</ListItemIcon>
               <ListItemText
                 primary={s.label}
-                primaryTypographyProps={{ fontWeight: selected ? 700 : 500 }}
+                primaryTypographyProps={{
+                  fontWeight: selected ? 700 : 500,
+                }}
               />
             </ListItemButton>
           );
@@ -66,9 +73,21 @@ export default function CollectorLayout({ section, onChangeSection, children, ti
   );
 
   return (
-    <Box sx={{ display: "flex" }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100vh",
+      }}
+    >
       {/* NAV */}
-      <Box component="nav" sx={{ width: { md: DRAWER_WIDTH }, flexShrink: { md: 0 } }} aria-label="sidebar">
+      <Box
+        component="nav"
+        sx={{
+          width: { xs: 0, md: DRAWER_WIDTH },
+          flexShrink: { md: 0 },
+        }}
+        aria-label="sidebar"
+      >
         {/* Mobile */}
         <Drawer
           variant="temporary"
@@ -77,23 +96,28 @@ export default function CollectorLayout({ section, onChangeSection, children, ti
           ModalProps={{ keepMounted: true }}
           sx={{
             display: { xs: "block", md: "none" },
-            "& .MuiDrawer-paper": { width: DRAWER_WIDTH, boxSizing: "border-box" },
+            "& .MuiDrawer-paper": {
+              width: DRAWER_WIDTH,
+              boxSizing: "border-box",
+            },
           }}
         >
           <Toolbar />
           {drawer}
         </Drawer>
+
         {/* Desktop */}
         <Drawer
           variant="permanent"
+          open
           sx={{
+            display: { xs: "none", md: "block" },
             "& .MuiDrawer-paper": {
               width: DRAWER_WIDTH,
               boxSizing: "border-box",
               mt: `76px`,
             },
           }}
-          open
         >
           <Toolbar />
           {drawer}
@@ -106,15 +130,25 @@ export default function CollectorLayout({ section, onChangeSection, children, ti
         sx={{
           flexGrow: 1,
           p: { xs: 2, md: 3 },
-          width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
+          width: {
+            xs: "100%",
+            md: `calc(100% - ${DRAWER_WIDTH}px)`,
+          },
         }}
       >
         {/* Top actions (solo mobile) */}
-        <Box sx={{ display: { xs: "flex", md: "none" }, alignItems: "center", mb: 2 }}>
-          <IconButton onClick={() => setMobileOpen(true)} sx={{ mr: 1 }}>
+        <Box
+          sx={{
+            display: { xs: "flex", md: "none" },
+            alignItems: "center",
+            mb: 2,
+            gap: 1,
+          }}
+        >
+          <IconButton onClick={() => setMobileOpen(true)}>
             <MenuRoundedIcon />
           </IconButton>
-          <Typography variant="h6" fontWeight={700}>
+          <Typography variant="h6" fontWeight={700} noWrap>
             {SECTIONS.find((s) => s.key === section)?.label || "Panel"}
           </Typography>
         </Box>

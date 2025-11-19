@@ -1,5 +1,5 @@
 // src/components/admin/sections/TransactionsSection.jsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef } from "react";
 import {
   Box,
   Paper,
@@ -27,6 +27,7 @@ import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
 import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
+import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import { useTransactions } from "../../../context/TransactionsContext";
 
 /* ---------------- helpers ---------------- */
@@ -55,6 +56,7 @@ const METHODS = [
   { value: "tarjeta", label: "Tarjeta" },
   { value: "qr", label: "QR" },
   { value: "otro", label: "Otro" },
+  { value: "debito_automatico", label: "Débito automático" },
 ];
 
 const STATUS = [
@@ -91,9 +93,16 @@ export default function TransactionsSection() {
     setStatus,
     refresh,
     fetchPayments,
+    // ⬇️ nuevos helpers que vienen del contexto
+    importNaranja,
+    importBancoNacion,
   } = useTransactions();
 
   const [localQ, setLocalQ] = useState(q || "");
+  const [importing, setImporting] = useState(false);
+
+  const naranjaInputRef = useRef(null);
+  const nacionInputRef = useRef(null);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil((Number(total) || 0) / (Number(limit) || 10))),
@@ -161,8 +170,68 @@ export default function TransactionsSection() {
     URL.revokeObjectURL(url);
   };
 
+  const handleClickImportNaranja = () => {
+    if (naranjaInputRef.current) {
+      naranjaInputRef.current.click();
+    }
+  };
+
+  const handleClickImportNacion = () => {
+    if (nacionInputRef.current) {
+      nacionInputRef.current.click();
+    }
+  };
+
+  const handleImportFile = async (event, tipo) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    try {
+      setImporting(true);
+
+      if (tipo === "naranja") {
+        await importNaranja(file);
+        window.alert("Importación de Naranja completada.");
+      } else {
+        await importBancoNacion(file);
+        window.alert("Importación de Banco Nación completada.");
+      }
+
+      // el contexto ya puede hacer refresh interno;
+      // igual forzamos uno para que la grilla se actualice seguro
+      await refresh();
+    } catch (err) {
+      console.error("Error en importación:", err);
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Error inesperado al importar el archivo.";
+      window.alert(msg);
+    } finally {
+      setImporting(false);
+      // limpiar input para poder volver a subir el mismo archivo si hace falta
+      event.target.value = "";
+    }
+  };
+
   return (
     <Box>
+      {/* inputs ocultos para subir archivos */}
+      <input
+        type="file"
+        accept=".txt"
+        ref={naranjaInputRef}
+        style={{ display: "none" }}
+        onChange={(e) => handleImportFile(e, "naranja")}
+      />
+      <input
+        type="file"
+        accept=".txt"
+        ref={nacionInputRef}
+        style={{ display: "none" }}
+        onChange={(e) => handleImportFile(e, "nacion")}
+      />
+
       <Stack
         direction={{ xs: "column", md: "row" }}
         spacing={1.5}
@@ -173,11 +242,11 @@ export default function TransactionsSection() {
         <Typography variant="h5" fontWeight={800}>
           Transacciones
         </Typography>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} flexWrap="wrap">
           <Button
             startIcon={<RefreshRoundedIcon />}
             onClick={() => refresh()}
-            disabled={loading}
+            disabled={loading || importing}
           >
             Refrescar
           </Button>
@@ -187,6 +256,22 @@ export default function TransactionsSection() {
             disabled={!items.length}
           >
             Exportar CSV
+          </Button>
+          <Button
+            startIcon={<UploadFileRoundedIcon />}
+            variant="outlined"
+            onClick={handleClickImportNaranja}
+            disabled={importing}
+          >
+            Importar Naranja
+          </Button>
+          <Button
+            startIcon={<UploadFileRoundedIcon />}
+            variant="outlined"
+            onClick={handleClickImportNacion}
+            disabled={importing}
+          >
+            Importar Banco Nación
           </Button>
         </Stack>
       </Stack>

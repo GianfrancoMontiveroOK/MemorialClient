@@ -142,11 +142,19 @@ export default function AdminPanel() {
   };
 
   return (
-    <Box sx={{ display: "flex" }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100vh",
+      }}
+    >
       {/* NAV */}
       <Box
         component="nav"
-        sx={{ width: { md: DRAWER_WIDTH }, flexShrink: { md: 0 } }}
+        sx={{
+          width: { xs: 0, md: DRAWER_WIDTH },
+          flexShrink: { md: 0 },
+        }}
       >
         {/* Mobile */}
         <Drawer
@@ -170,6 +178,7 @@ export default function AdminPanel() {
         <Drawer
           variant="permanent"
           sx={{
+            display: { xs: "none", md: "block" },
             "& .MuiDrawer-paper": {
               width: DRAWER_WIDTH,
               boxSizing: "border-box",
@@ -189,7 +198,10 @@ export default function AdminPanel() {
         sx={{
           flexGrow: 1,
           p: { xs: 2, md: 3 },
-          width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
+          width: {
+            xs: "100%",
+            md: `calc(100% - ${DRAWER_WIDTH}px)`,
+          },
         }}
       >
         {/* Top (mobile) */}
@@ -198,12 +210,13 @@ export default function AdminPanel() {
             display: { xs: "flex", md: "none" },
             alignItems: "center",
             mb: 2,
+            gap: 1,
           }}
         >
-          <IconButton onClick={toggleDrawer} sx={{ mr: 1 }}>
+          <IconButton onClick={toggleDrawer}>
             <MenuRoundedIcon />
           </IconButton>
-          <Typography variant="h6" fontWeight={700}>
+          <Typography variant="h6" fontWeight={700} noWrap>
             {currentLabel}
           </Typography>
         </Box>
