@@ -1,45 +1,56 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es-AR">
   <head>
     <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
 
-    <!-- Favicon & PWA basics (NO SE TOCA LA RUTA DE CRA) -->
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-
-    <!-- Viewport & theme -->
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-
-    <!-- SEO básico -->
-    <title>Memorial Servicios</title>
+    <!-- Título y SEO -->
+    <title>
+      Memorial Servicios | Planes de Sepelio y Servicios Funerarios en San
+      Rafael
+    </title>
     <meta
       name="description"
-      content="Memorial Servicios acompaña a las familias con planes de sepelio, servicios integrales y atención personalizada las 24 horas."
+      content="Memorial Servicios acompaña a las familias de San Rafael y la región con planes de sepelio, servicios funerarios integrales y atención personalizada las 24 horas."
     />
-    <meta name="robots" content="index, follow" />
-
-    <!-- Open Graph (para compartir en WhatsApp, Facebook, etc.) -->
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="Memorial Servicios" />
     <meta
-      property="og:description"
-      content="Planes de sepelio y servicios integrales con atención humana y profesional."
+      name="keywords"
+      content="planes de sepelio San Rafael, servicios funerarios Mendoza, cochería San Rafael, sepelios, cremaciones, servicio de inhumación, Memorial Servicios"
     />
-    <meta property="og:image" content="%PUBLIC_URL%/og-image.jpg" />
-    <meta property="og:url" content="https://memorialsanrafael.com.ar" />
+    <link rel="canonical" href="https://www.memorialsanrafael.com.ar/" />
 
-    <!-- Twitter Cards -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Memorial Servicios" />
-    <meta
-      name="twitter:description"
-      content="Acompañamos a tu familia con planes de sepelio y servicios integrales."
+    <!-- Indexación -->
+    <meta name="robots" content="index,follow" />
+
+    <!-- Colores del navegador -->
+    <meta name="theme-color" content="#0B2436" />
+    <meta name="color-scheme" content="light only" />
+
+    <!-- PWA / Manifest -->
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" sizes="any" />
+    <!-- Iconos 192 y 512 -->
+    <link
+      rel="apple-touch-icon"
+      sizes="192x192"
+      href="%PUBLIC_URL%/logo192.png"
     />
-    <meta name="twitter:image" content="%PUBLIC_URL%/og-image.jpg" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="512x512"
+      href="%PUBLIC_URL%/logo512.png"
+    />
+    <link
+      rel="mask-icon"
+      href="%PUBLIC_URL%/safari-pinned-tab.svg"
+      color="#0B2436"
+    />
 
-    <!-- Tipografías -->
+    <!-- Tipografías (Cormorant + Inter, como en el diseño) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -47,16 +58,77 @@
       rel="stylesheet"
     />
 
-    <!--
-      Este archivo HTML es una plantilla de Create React App.
-      Los bundles de React se inyectan automáticamente en <body> al hacer build.
-      No borrar el div#root ni las referencias con %PUBLIC_URL%.
-    -->
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Memorial Servicios" />
+    <meta
+      property="og:title"
+      content="Memorial Servicios | Planes de Sepelio y Servicios Funerarios en San Rafael"
+    />
+    <meta
+      property="og:description"
+      content="Acompañamos a tu familia con seriedad, calidez y servicios integrales las 24 horas."
+    />
+    <meta property="og:url" content="https://www.memorialsanrafael.com.ar/" />
+    <meta property="og:image" content="%PUBLIC_URL%/og-image.jpg" />
+    <meta
+      property="og:image:alt"
+      content="Memorial Servicios - Acompañamos a tu familia"
+    />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Memorial Servicios | Planes de Sepelio y Servicios Funerarios en San Rafael"
+    />
+    <meta
+      name="twitter:description"
+      content="Planes de sepelio y servicios funerarios integrales, con atención personalizada."
+    />
+    <meta name="twitter:image" content="%PUBLIC_URL%/og-image.jpg" />
+
+    <!-- Datos estructurados: Organization + FuneralHome -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "name": "Memorial Servicios",
+            "url": "https://www.memorialsanrafael.com.ar/",
+            "logo": "https://www.memorialsanrafael.com.ar/logo512.png",
+            "sameAs": [
+              "https://www.instagram.com/REEMPLAZAR_Memorial",
+              "https://www.facebook.com/REEMPLAZAR_Memorial"
+            ]
+          },
+          {
+            "@type": "FuneralHome",
+            "name": "Memorial Servicios",
+            "url": "https://www.memorialsanrafael.com.ar/",
+            "image": "https://www.memorialsanrafael.com.ar/og-image.jpg",
+            "address": {
+              "@type": "PostalAddress",
+              "addressLocality": "San Rafael",
+              "addressRegion": "Mendoza",
+              "addressCountry": "AR"
+            },
+            "areaServed": "San Rafael y zona de influencia",
+            "availableService": [
+              "Planes de Sepelio",
+              "Servicio de Inhumación",
+              "Cremaciones",
+              "Traslados"
+            ],
+            "telephone": "+54 9 260 000 0000"
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
-    <noscript
-      >Necesitás habilitar JavaScript para usar esta aplicación.</noscript
-    >
+    <noscript>Necesitás habilitar JavaScript para usar este sitio.</noscript>
     <div id="root"></div>
   </body>
 </html>
