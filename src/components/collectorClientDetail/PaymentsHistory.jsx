@@ -1,5 +1,5 @@
 // src/components/collector/PaymentsHistory.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Box,
   Stack,
@@ -14,8 +14,6 @@ import {
   IconButton,
   Tooltip,
   TablePagination,
-  Tabs,
-  Tab,
   CircularProgress,
   Alert,
   Typography,
@@ -23,13 +21,9 @@ import {
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import { fmtDate, fmtMoney } from "./utils";
-import {
-  listCollectorPayments,
-  listCollectorReceipts,
-} from "../../api/collector";
+import { listCollectorPayments } from "../../api/collector";
 
 export default function PaymentsHistory({ clientId }) {
-  const [tab, setTab] = useState("pagos"); // "pagos" | "recibos"
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [page, setPage] = useState(0); // UI 0-based
@@ -45,7 +39,7 @@ export default function PaymentsHistory({ clientId }) {
     return () => clearTimeout(t);
   }, [q]);
 
-  // Fetch
+  // Fetch pagos (ya vienen con receipt dentro)
   useEffect(() => {
     if (!clientId) {
       setRows([]);
@@ -65,10 +59,7 @@ export default function PaymentsHistory({ clientId }) {
         };
         if (debouncedQ) params.q = debouncedQ;
 
-        const resp =
-          tab === "pagos"
-            ? await listCollectorPayments(params)
-            : await listCollectorReceipts(params);
+        const resp = await listCollectorPayments(params);
 
         const root = resp?.data ?? resp ?? {};
         const items = Array.isArray(root.items)
@@ -98,65 +89,56 @@ export default function PaymentsHistory({ clientId }) {
     return () => {
       cancelled = true;
     };
-  }, [clientId, tab, page, size, debouncedQ]);
+  }, [clientId, page, size, debouncedQ]);
 
-  const openPdf = (row) => {
-    if (!row) return;
-    const url =
-      row.pdfUrl ||
-      (() => {
-        const year = row.createdAt
-          ? new Date(row.createdAt).getFullYear()
-          : new Date().getFullYear();
-        return `/files/receipts/${year}/${row._id}.pdf`;
-      })();
+  // Abre un PDF de recibo (usamos el receipt que viene dentro del pago)
+  const openPdf = (receipt) => {
+    if (!receipt) return;
+    const year = receipt.createdAt
+      ? new Date(receipt.createdAt).getFullYear()
+      : new Date().getFullYear();
+
+    const url = receipt.pdfUrl || `/files/receipts/${year}/${receipt._id}.pdf`;
+
     window.open(url, "_blank", "noopener,noreferrer");
-  };
-
-  const onChangeTab = (_e, v) => {
-    setPage(0);
-    setTab(v);
-    // limpiar errores al cambiar tab
-    setErr("");
   };
 
   return (
     <Stack spacing={1}>
+      {/* HEADER: título + buscador */}
       <Paper variant="outlined" sx={{ p: 1.5 }}>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Tabs
-            value={tab}
-            onChange={onChangeTab}
-            sx={{
-              minHeight: 40,
-              "& .MuiTab-root": {
-                minHeight: 40,
-                textTransform: "none",
-                fontWeight: 800,
-              },
-            }}
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1.5}
+          alignItems={{ xs: "flex-start", sm: "center" }}
+        >
+          <Typography
+            variant="subtitle1"
+            fontWeight={800}
+            sx={{ minWidth: 80 }}
           >
-            <Tab label="Pagos" value="pagos" />
-            <Tab label="Recibos" value="recibos" />
-          </Tabs>
-          <Box flex={1} />
-          <TextField
-            size="small"
-            placeholder={tab === "pagos" ? "Buscar pagos…" : "Buscar recibos…"}
-            value={q}
-            onChange={(e) => {
-              setPage(0);
-              setQ(e.target.value);
-            }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchRoundedIcon fontSize="small" />
-                </InputAdornment>
-              ),
-            }}
-            sx={{ minWidth: 220 }}
-          />
+            Historial de pagos
+          </Typography>
+
+          <Box sx={{ flex: 1, width: "100%" }}>
+            <TextField
+              size="small"
+              fullWidth
+              placeholder="Buscar pagos…"
+              value={q}
+              onChange={(e) => {
+                setPage(0);
+                setQ(e.target.value);
+              }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchRoundedIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Box>
         </Stack>
       </Paper>
 
@@ -183,31 +165,24 @@ export default function PaymentsHistory({ clientId }) {
           </Stack>
         )}
 
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              {tab === "pagos" ? (
-                <>
-                  <TableCell>Fecha</TableCell>
-                  <TableCell>Método</TableCell>
-                  <TableCell align="right">Importe</TableCell>
-                  <TableCell>Recibo</TableCell>
-                </>
-              ) : (
-                // TAB: RECIBOS → solo nombre del recibo + botón abrir
-                <>
-                  <TableCell>Recibo</TableCell>
-                  <TableCell align="right">Abrir</TableCell>
-                </>
-              )}
-            </TableRow>
-          </TableHead>
+        {/* Tabla scrollable horizontal en mobile */}
+        <Box sx={{ width: "100%", overflowX: "auto" }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Fecha</TableCell>
+                <TableCell>Método</TableCell>
+                <TableCell align="right">Importe</TableCell>
+                <TableCell>Recibo</TableCell>
+              </TableRow>
+            </TableHead>
 
-          <TableBody>
-            {rows?.map((it) => (
-              <TableRow key={it._id}>
-                {tab === "pagos" ? (
-                  <>
+            <TableBody>
+              {rows?.map((it) => {
+                const receipt = it.receipt || null;
+
+                return (
+                  <TableRow key={it._id}>
                     <TableCell>
                       {fmtDate(it.createdAt || it.postedAt)}
                     </TableCell>
@@ -216,70 +191,49 @@ export default function PaymentsHistory({ clientId }) {
                       {fmtMoney(Number(it.amount || it.importe || 0))}
                     </TableCell>
                     <TableCell>
-                      {it.receiptId || it.pdfUrl ? (
-                        <Tooltip title="Ver PDF">
-                          <IconButton
-                            size="small"
-                            onClick={() =>
-                              openPdf({
-                                _id: it.receiptId || it._id,
-                                createdAt: it.createdAt,
-                                pdfUrl: it.pdfUrl,
-                              })
-                            }
-                          >
-                            <OpenInNewRoundedIcon fontSize="small" />
-                          </IconButton>
+                      {receipt ? (
+                        <Tooltip
+                          title={
+                            receipt.number
+                              ? `Ver recibo ${receipt.number}`
+                              : "Ver PDF de recibo"
+                          }
+                        >
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() => openPdf(receipt)}
+                            >
+                              <OpenInNewRoundedIcon fontSize="small" />
+                            </IconButton>
+                          </span>
                         </Tooltip>
                       ) : (
-                        "—"
+                        <Typography variant="body2" color="text.secondary">
+                          Sin recibo
+                        </Typography>
                       )}
                     </TableCell>
-                  </>
-                ) : (
-                  // RECIBOS: solo nombre + botón
-                  <>
-                    <TableCell>
-                      <Typography fontWeight={700}>
-                        {it.number || it.numero || it._id}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Tooltip title="Abrir PDF">
-                        <span>
-                          <IconButton
-                            size="small"
-                            onClick={() => openPdf(it)}
-                            disabled={!it.pdfUrl && !it._id}
-                          >
-                            <OpenInNewRoundedIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    </TableCell>
-                  </>
-                )}
-              </TableRow>
-            ))}
+                  </TableRow>
+                );
+              })}
 
-            {/* Mensaje vacío */}
-            {!loading && rows?.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={tab === "pagos" ? 4 : 2}>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ py: 2, textAlign: "center" }}
-                  >
-                    {tab === "pagos"
-                      ? "Sin pagos para mostrar."
-                      : "Sin recibos para mostrar."}
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              {!loading && rows?.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ py: 2, textAlign: "center" }}
+                    >
+                      Sin pagos para mostrar.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Box>
 
         <TablePagination
           component="div"
@@ -292,6 +246,21 @@ export default function PaymentsHistory({ clientId }) {
             setSize(parseInt(e.target.value, 10));
           }}
           rowsPerPageOptions={[10, 20, 50]}
+          sx={{
+            "& .MuiTablePagination-toolbar": {
+              px: 1,
+              gap: { xs: 1, sm: 2 },
+            },
+            "& .MuiTablePagination-selectLabel": {
+              display: { xs: "none", sm: "block" },
+            },
+            "& .MuiTablePagination-input": {
+              marginRight: { xs: 1, sm: 2 },
+            },
+            "& .MuiTablePagination-displayedRows": {
+              fontSize: 12,
+            },
+          }}
         />
       </Paper>
     </Stack>

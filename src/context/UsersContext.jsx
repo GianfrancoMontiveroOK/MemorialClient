@@ -7,7 +7,18 @@ import React, {
   useState,
   useEffect,
 } from "react";
-import * as usersApi from "../api/users";
+import {
+  getUsers,
+  getRecentUsers,
+  getUserById,
+  updateUser,
+  setUserRole,
+  setUserCobrador,
+  setUserVendedor,
+  setCollectorCommission as apiSetCollectorCommission, // 👈 alias para no pisar el nombre local
+  setCollectorCommissionGraceDays as apiSetCollectorCommissionGraceDays, // ⬅️ NUEVO
+  setCollectorCommissionPenaltyPerDay as apiSetCollectorCommissionPenaltyPerDay, // ⬅️ NUEVO
+} from "../api/users";
 
 const UsersContext = createContext(null);
 
@@ -63,7 +74,7 @@ export function UsersProvider({ children }) {
       };
 
       try {
-        const { data } = await usersApi.getUsers(params);
+        const { data } = await getUsers(params);
         setItems(data.items || []);
         setTotal(data.total || 0);
 
@@ -86,7 +97,7 @@ export function UsersProvider({ children }) {
   const fetchRecentUsers = useCallback(async (opts = {}) => {
     setLoadingRecent(true);
     try {
-      const { data } = await usersApi.getRecentUsers(opts);
+      const { data } = await getRecentUsers(opts);
       setRecent(Array.isArray(data.items) ? data.items : data || []);
     } catch (e) {
       console.warn("No se pudo cargar recientes:", e?.message || e);
@@ -98,7 +109,7 @@ export function UsersProvider({ children }) {
   const getUser = useCallback(
     async (id) => {
       try {
-        const { data } = await usersApi.getUserById(id);
+        const { data } = await getUserById(id);
         const item = data.item || data;
         setSelected(item);
         // también sincronizamos en listas si ya existe
@@ -129,13 +140,13 @@ export function UsersProvider({ children }) {
     [mergeOrAppend]
   );
 
-  const updateUser = useCallback(
+  const updateUserFn = useCallback(
     async (id, payload) => {
       setSaving(true);
       try {
         const clean = { ...payload };
         if (clean.email) clean.email = normalizeEmail(clean.email);
-        const { data } = await usersApi.updateUser(id, clean);
+        const { data } = await updateUser(id, clean);
         const updated = data.item || data;
         upsertInList(updated);
         return updated;
@@ -157,7 +168,7 @@ export function UsersProvider({ children }) {
     async (id, role) => {
       setSaving(true);
       try {
-        const { data } = await usersApi.setUserRole(id, role);
+        const { data } = await setUserRole(id, role);
         const updated = data.item || data;
         upsertInList(updated);
         return updated;
@@ -177,7 +188,7 @@ export function UsersProvider({ children }) {
     async (id, idCobrador) => {
       setSaving(true);
       try {
-        const { data } = await usersApi.setUserCobrador(id, idCobrador);
+        const { data } = await setUserCobrador(id, idCobrador);
         const updated = data.item || data;
         upsertInList(updated);
         return updated;
@@ -199,7 +210,7 @@ export function UsersProvider({ children }) {
     async (id, idVendedor) => {
       setSaving(true);
       try {
-        const { data } = await usersApi.setUserVendedor(id, idVendedor);
+        const { data } = await setUserVendedor(id, idVendedor);
         const updated = data.item || data;
         upsertInList(updated);
         return updated;
@@ -208,6 +219,84 @@ export function UsersProvider({ children }) {
           e?.response?.data?.message ||
             e.message ||
             "No se pudo asignar vendedor"
+        );
+        throw e;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [upsertInList]
+  );
+
+  // ⬇️ ya tenías este
+  const setCollectorCommission = useCallback(
+    async (id, porcentajeCobrador) => {
+      setSaving(true);
+      try {
+        const { data } = await apiSetCollectorCommission(
+          id,
+          porcentajeCobrador
+        );
+        const updated = data.item || data.data || data;
+        upsertInList(updated);
+        return updated;
+      } catch (e) {
+        setError(
+          e?.response?.data?.message ||
+            e.message ||
+            "No se pudo actualizar la comisión del cobrador"
+        );
+        throw e;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [upsertInList]
+  );
+
+  // ⬇️ NUEVO: actualizar días de gracia
+  const setCollectorCommissionGraceDays = useCallback(
+    async (id, graceDays) => {
+      setSaving(true);
+      try {
+        const { data } = await apiSetCollectorCommissionGraceDays(
+          id,
+          graceDays
+        );
+        const updated = data.item || data.data || data;
+        upsertInList(updated);
+        return updated;
+      } catch (e) {
+        setError(
+          e?.response?.data?.message ||
+            e.message ||
+            "No se pudieron actualizar los días de gracia"
+        );
+        throw e;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [upsertInList]
+  );
+
+  // ⬇️ NUEVO: actualizar penalidad por día
+  const setCollectorCommissionPenaltyPerDay = useCallback(
+    async (id, penaltyPerDay) => {
+      setSaving(true);
+      try {
+        const { data } = await apiSetCollectorCommissionPenaltyPerDay(
+          id,
+          penaltyPerDay
+        );
+        const updated = data.item || data.data || data;
+        upsertInList(updated);
+        return updated;
+      } catch (e) {
+        setError(
+          e?.response?.data?.message ||
+            e.message ||
+            "No se pudo actualizar la penalidad diaria"
         );
         throw e;
       } finally {
@@ -255,10 +344,13 @@ export function UsersProvider({ children }) {
       fetchUsers,
       fetchRecentUsers,
       getUser,
-      updateUser,
+      updateUser: updateUserFn,
       changeRole,
       assignCobrador,
       assignVendedor,
+      setCollectorCommission,
+      setCollectorCommissionGraceDays,
+      setCollectorCommissionPenaltyPerDay,
     }),
     [
       items,
@@ -277,10 +369,13 @@ export function UsersProvider({ children }) {
       fetchUsers,
       fetchRecentUsers,
       getUser,
-      updateUser,
+      updateUserFn,
       changeRole,
       assignCobrador,
       assignVendedor,
+      setCollectorCommission, // 👈 ya estaba
+      setCollectorCommissionGraceDays, // 👈 NUEVO
+      setCollectorCommissionPenaltyPerDay, // 👈 NUEVO
     ]
   );
 

@@ -212,3 +212,7 @@ export const createCollectorPayment = (payload) =>
 no debe modificar el CRM. Para acciones futuras (visitas/notas), usar endpoints
 específicos (p.ej. /collector/visitas, /collector/notas).
 */
+// ../../api/collector.js (ejemplo)
+export async function getCollectorSummary() {
+  return axios.get("/collector/summary"); // usando tu instancia de axios
+}

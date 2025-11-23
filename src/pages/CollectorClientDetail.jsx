@@ -1,3 +1,4 @@
+// src/pages/CollectorClientDetail.jsx (o donde lo tengas)
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Box,
@@ -7,6 +8,7 @@ import {
   Alert,
   Typography,
   Skeleton,
+  Button,
 } from "@mui/material";
 import { useParams, useNavigate } from "react-router-dom";
 import { useCollector } from "../context";
@@ -17,7 +19,7 @@ import {
   PaymentsHistory,
   ApplyPaymentDialog,
   ReceiptDialog,
-  MapCard, // ⬅️ nuevo
+  MapCard,
   buildAddress,
   fmtMoney,
 } from "../components/collectorClientDetail";
@@ -60,6 +62,9 @@ export default function CollectorClientDetail() {
   const [lastReceipt, setLastReceipt] = useState(null);
   const [toast, setToast] = useState({ open: false, sev: "info", msg: "" });
 
+  // sección activa: 'payments' | 'account'
+  const [activeSection, setActiveSection] = useState("account");
+
   const canChargeNow = Boolean(
     debtSummary?.canChargeNow ??
       (Array.isArray(debt)
@@ -85,6 +90,14 @@ export default function CollectorClientDetail() {
     if (r?._id) fetchCollectorClientDebt(r._id, { includeFuture: 1 });
   };
 
+  const handleCloseToast = () =>
+    setToast((t) => ({
+      ...t,
+      open: false,
+    }));
+
+  const handleGoBack = () => navigate(-1);
+
   return (
     <Box p={2} sx={{ maxWidth: 1100, mx: "auto" }}>
       <ClientHeader
@@ -92,40 +105,78 @@ export default function CollectorClientDetail() {
         client={r}
         cuotaVig={cuotaVig}
         canChargeNow={canChargeNow}
-        onBack={() => navigate(-1)}
+        onBack={handleGoBack}
         onOpenApply={() => setApplyOpen(true)}
       />
 
-      <Stack direction={{ xs: "column", lg: "row" }} spacing={2}>
-        {/* Seguimiento del cobrador: Pagos / Recibos */}
-        <Paper variant="outlined" sx={{ p: 2, flex: 1 }}>
-          <PaymentsHistory clientId={r?._id} />
-        </Paper>
-
-        {/* Lateral derecho: Estado de cuenta + Mapa */}
-        <Stack spacing={2} sx={{ width: { xs: "100%", lg: 380 } }}>
-          <AccountCard
-            debtLoading={debtLoading}
-            debt={debt}
-            debtSummary={debtSummary}
-            onOpenApply={() => setApplyOpen(true)}
-            canApply={Boolean(r)}
-          />
-
-          <MapCard
-            address={addr}
-            onOpenMaps={() =>
-              addr &&
-              window.open(
-                `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                  addr
-                )}`,
-                "_blank",
-                "noopener,noreferrer"
-              )
-            }
-          />
+      {/* Botonera horizontal de secciones */}
+      <Box mt={2} mb={1}>
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{
+            overflowX: "auto",
+            pb: 0.5,
+            "&::-webkit-scrollbar": {
+              height: 4,
+            },
+          }}
+        >
+          <Button
+            size="small"
+            variant={activeSection === "account" ? "contained" : "outlined"}
+            onClick={() => setActiveSection("account")}
+            sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
+          >
+            Estado de cuenta
+          </Button>
+          <Button
+            size="small"
+            variant={activeSection === "payments" ? "contained" : "outlined"}
+            onClick={() => setActiveSection("payments")}
+            sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
+          >
+            Historial de pagos
+          </Button>
+          {/* Si en el futuro sumás más secciones, las agregás acá */}
         </Stack>
+      </Box>
+
+      {/* Contenido según sección */}
+      <Stack spacing={2}>
+        {/* Sección: Historial de pagos */}
+        {activeSection === "payments" && (
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <PaymentsHistory clientId={r?._id} />
+          </Paper>
+        )}
+
+        {/* Sección: Estado de cuenta (incluye mapa como apoyo visual) */}
+        {activeSection === "account" && (
+          <Stack direction={{ xs: "column", lg: "row" }} spacing={2}>
+            <AccountCard
+              debtLoading={debtLoading}
+              debt={debt}
+              debtSummary={debtSummary}
+              onOpenApply={() => setApplyOpen(true)}
+              canApply={Boolean(r)}
+            />
+
+            <MapCard
+              address={addr}
+              onOpenMaps={() =>
+                addr &&
+                window.open(
+                  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                    addr
+                  )}`,
+                  "_blank",
+                  "noopener,noreferrer"
+                )
+              }
+            />
+          </Stack>
+        )}
       </Stack>
 
       {err ? (
@@ -154,11 +205,11 @@ export default function CollectorClientDetail() {
       <Snackbar
         open={toast.open}
         autoHideDuration={4000}
-        onClose={() => setToast((t) => ({ ...t, open: false }))}
+        onClose={handleCloseToast}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
         <Alert
-          onClose={() => setToast((t) => ({ ...t, open: false }))}
+          onClose={handleCloseToast}
           severity={toast.sev}
           variant="filled"
           sx={{ width: "100%" }}

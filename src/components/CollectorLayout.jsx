@@ -1,3 +1,4 @@
+// src/components/CollectorLayout.jsx
 import React from "react";
 import {
   Box,
@@ -16,13 +17,13 @@ import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import PeopleAltIcon from "@mui/icons-material/PeopleAlt";
 import PaymentsIcon from "@mui/icons-material/Payments";
 import DashboardIcon from "@mui/icons-material/Dashboard";
+import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 
 const DRAWER_WIDTH = 240;
 
 const SECTIONS = [
   { key: "resumen", label: "Resumen", icon: <DashboardIcon /> },
-  { key: "clientes", label: "Mis clientes", icon: <PeopleAltIcon /> },
-  { key: "cobros", label: "Cobros", icon: <PaymentsIcon /> },
+  { key: "clientes", label: "Clientes", icon: <PeopleAltIcon /> },
 ];
 
 export default function CollectorLayout({
@@ -45,6 +46,7 @@ export default function CollectorLayout({
           Panel de gestión
         </Typography>
       </Box>
+
       <List dense>
         {SECTIONS.map((s) => {
           const selected = s.key === section;
@@ -56,7 +58,17 @@ export default function CollectorLayout({
                 onChangeSection?.(s.key);
                 if (!isMdUp) setMobileOpen(false);
               }}
-              sx={{ borderRadius: 2, mx: 1, mb: 0.5 }}
+              sx={{
+                borderRadius: 2,
+                mx: 1,
+                mb: 0.5,
+                "&.Mui-selected": {
+                  bgcolor: "action.selected",
+                },
+                "&.Mui-selected:hover": {
+                  bgcolor: "action.selected",
+                },
+              }}
             >
               <ListItemIcon sx={{ minWidth: 40 }}>{s.icon}</ListItemIcon>
               <ListItemText

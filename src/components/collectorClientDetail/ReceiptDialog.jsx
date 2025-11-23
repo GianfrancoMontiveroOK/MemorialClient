@@ -34,6 +34,16 @@ export default function ReceiptDialog({ open, onClose, client, lastReceipt }) {
 
   const pdfUrl = rx?._id ? getReceiptPdfUrl(rx._id) : rx?.pdfUrl || "";
 
+  const amount = Number(payment?.amount ?? payment?.importe ?? 0) || 0;
+
+  const paymentDate = fmtDate(
+    payment?.postedAt || payment?.createdAt || new Date().toISOString()
+  );
+
+  const canDownload = !!rx?._id;
+  const canShare = !!rx?._id;
+  const canCopyLink = !!pdfUrl;
+
   const downloadPdf = async () => {
     if (!rx?._id) return;
     try {
@@ -65,19 +75,13 @@ export default function ReceiptDialog({ open, onClose, client, lastReceipt }) {
           text: [
             `Recibo de cobro – Memorial`,
             `Cliente: ${client?.nombre ?? ""}`,
-            `Importe: ${fmtMoney(
-              Number(payment?.amount ?? payment?.importe ?? 0) || 0
-            )}`,
-            `Fecha: ${fmtDate(
-              payment?.postedAt ||
-                payment?.createdAt ||
-                new Date().toISOString()
-            )}`,
+            `Importe: ${fmtMoney(amount)}`,
+            `Fecha: ${paymentDate}`,
           ].join("\n"),
           files: [file],
         });
       } else {
-        // Fallback: descarga directa si no se puede compartir archivos
+        // Fallback: descarga directa
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = blobUrl;
@@ -102,7 +106,6 @@ export default function ReceiptDialog({ open, onClose, client, lastReceipt }) {
       await navigator.clipboard.writeText(pdfUrl);
       alert("Enlace copiado al portapapeles.");
     } catch {
-      // Fallback
       const ta = document.createElement("textarea");
       ta.value = pdfUrl;
       document.body.appendChild(ta);
@@ -121,22 +124,60 @@ export default function ReceiptDialog({ open, onClose, client, lastReceipt }) {
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          gap: 1,
+          gap: 1.5,
           textAlign: "center",
         }}
       >
         <CheckCircleRoundedIcon sx={{ fontSize: 64, color: "success.main" }} />
+
         <Typography variant="h6" fontWeight={900}>
           ¡Cobro registrado!
         </Typography>
+
         <Typography variant="body2" color="text.secondary">
           El recibo PDF está listo para compartir o descargar.
         </Typography>
 
+        {/* Resumen del recibo */}
+        {payment && (
+          <Stack
+            spacing={0.25}
+            sx={{
+              mt: 1.5,
+              mb: 1,
+              px: 2,
+              py: 1,
+              borderRadius: 2,
+              bgcolor: "action.hover",
+              width: "100%",
+            }}
+          >
+            <Typography
+              variant="body2"
+              fontWeight={700}
+              noWrap
+              title={client?.nombre}
+            >
+              {client?.nombre || "Cliente"}
+            </Typography>
+            <Typography variant="body2">
+              Importe: <strong>{fmtMoney(amount)}</strong>
+            </Typography>
+            <Typography variant="body2">
+              Fecha: <strong>{paymentDate}</strong>
+            </Typography>
+          </Stack>
+        )}
+
+        {/* Botonera */}
         <Stack
-          direction="row"
-          spacing={1.5}
-          sx={{ mt: 2, flexWrap: "wrap", justifyContent: "center" }}
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1}
+          sx={{
+            mt: 1,
+            width: "100%",
+            justifyContent: "center",
+          }}
         >
           <Tooltip title="Compartir PDF (adjunto)">
             <span>
@@ -144,6 +185,9 @@ export default function ReceiptDialog({ open, onClose, client, lastReceipt }) {
                 onClick={sharePdf}
                 startIcon={<ShareRoundedIcon />}
                 variant="contained"
+                color="success"
+                fullWidth
+                disabled={!canShare}
               >
                 Compartir
               </Button>
@@ -154,6 +198,9 @@ export default function ReceiptDialog({ open, onClose, client, lastReceipt }) {
             onClick={downloadPdf}
             startIcon={<DownloadIcon />}
             variant="outlined"
+            color="inherit"
+            fullWidth
+            disabled={!canDownload}
           >
             Descargar PDF
           </Button>
@@ -161,7 +208,9 @@ export default function ReceiptDialog({ open, onClose, client, lastReceipt }) {
       </DialogContent>
 
       <DialogActions sx={{ justifyContent: "center", pb: 2 }}>
-        <Button onClick={onClose}>Cerrar</Button>
+        <Button color="inherit" onClick={onClose}>
+          Cerrar
+        </Button>
       </DialogActions>
     </Dialog>
   );

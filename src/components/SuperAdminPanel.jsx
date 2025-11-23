@@ -32,15 +32,15 @@ import ReceiptsSection from "./admin/sections/ReceiptsSection";
 
 // ⬇️ ARQUEOS + DETALLE
 import ArqueosSection from "./admin/sections/ArqueosSection";
-import CollectorDetailSection from "./admin/sections/CollectorDetailSection"; // <- verifica esta ruta
+import CollectorDetailSection from "./admin/sections/CollectorDetailSection";
 
-// ⬇️ NUEVO: ABM de Ítems
+// ⬇️ ABM de Ítems
 import ItemsSection from "./admin/sections/ItemsSection";
 
 // Claves visibles en sidebar
 const ALLOWED_KEYS = [
   "clientes",
-  "items", // ⬅️ NUEVO
+  "items",
   "transacciones",
   "diario",
   "outbox",
@@ -82,6 +82,9 @@ export default function SuperAdminPanel() {
     assignCobrador,
     assignVendedor,
     setSelected,
+    setCollectorCommission, // % comisión
+    setCollectorCommissionGraceDays, // días de gracia ⬅️ NUEVO
+    setCollectorCommissionPenaltyPerDay, // penalidad diaria ⬅️ NUEVO
   } = useUsers();
 
   const navigate = useNavigate();
@@ -89,7 +92,7 @@ export default function SuperAdminPanel() {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [section, setSection] = React.useState(FIRST_ALLOWED);
 
-  // === Estado para drilldown de Arqueos ===
+  // Estado para drilldown de Arqueos
   const [selectedCollector, setSelectedCollector] = React.useState(null);
   const [detailFilters, setDetailFilters] = React.useState({
     dateFrom: "",
@@ -131,12 +134,10 @@ export default function SuperAdminPanel() {
   const payload = data?.data ? data.data : data || {};
   const resumen = payload?.resumen || {};
 
-  // Label actual (incluye sección interna)
   const currentLabel =
     SECTIONS.find((s) => s.key === section)?.label ||
     (section === "collector-detail" ? "Detalle del cobrador" : "Panel");
 
-  // Handler que recibe ArqueosSection
   const openCollectorDetail = ({ user, dateFrom, dateTo }) => {
     setSelectedCollector(user || null);
     setDetailFilters({
@@ -148,8 +149,6 @@ export default function SuperAdminPanel() {
 
   const goBackFromDetail = () => {
     setSection("arqueos");
-    // si querés limpiar la selección al volver:
-    // setSelectedCollector(null);
   };
 
   return (
@@ -188,7 +187,6 @@ export default function SuperAdminPanel() {
               setSection(sanitizeSection(s));
               setMobileOpen(false);
             }}
-            // opcional: si tu Sidebar acepta filtro de claves visibles
             filterKeys={ALLOWED_KEYS}
           />
         </Drawer>
@@ -267,7 +265,6 @@ export default function SuperAdminPanel() {
           />
         )}
 
-        {/* NUEVO: ABM de Ítems */}
         {section === "items" && <ItemsSection />}
 
         {section === "transacciones" && <TransactionsSection />}
@@ -294,6 +291,15 @@ export default function SuperAdminPanel() {
             onAssignVendedor={(id, idVendedor) =>
               assignVendedor(id, idVendedor)
             }
+            onChangeCommission={(id, commission) =>
+              setCollectorCommission(id, commission)
+            }
+            onChangeCommissionGraceDays={(id, days) =>
+              setCollectorCommissionGraceDays(id, days)
+            } // 👈 NUEVO
+            onChangeCommissionPenaltyPerDay={(id, penalty) =>
+              setCollectorCommissionPenaltyPerDay(id, penalty)
+            } // 👈 NUEVO
           />
         )}
 
@@ -301,12 +307,10 @@ export default function SuperAdminPanel() {
         {section === "settings" && <SettingsSection />}
         {section === "recibos" && <ReceiptsSection />}
 
-        {/* ARQUEOS listado */}
         {section === "arqueos" && (
           <ArqueosSection onOpenCollectorDetail={openCollectorDetail} />
         )}
 
-        {/* Sección interna (no en sidebar): Detalle de cobrador/admin */}
         {section === "collector-detail" && (
           <CollectorDetailSection
             user={selectedCollector}

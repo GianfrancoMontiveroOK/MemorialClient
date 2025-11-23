@@ -18,6 +18,9 @@ import {
   Chip,
   Stack,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
+
 import SearchIcon from "@mui/icons-material/Search";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -105,10 +108,107 @@ function BillingChip({ billing }) {
   );
 }
 
+/* ---------- Card para mobile ---------- */
+function MobileClientCard({
+  row,
+  onCopyAddress,
+  onOpenMaps,
+  onOpenWhatsApp,
+  onView,
+}) {
+  const hasPhone = !!digits(row?.telefono || "");
+  const cuotaVig =
+    row?.cuotaVigente ?? (row?.usarCuotaIdeal ? row?.cuotaIdeal : row?.cuota);
+
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        borderRadius: 2,
+        p: 1.5,
+        mb: 1,
+      }}
+    >
+      <Stack spacing={0.75}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between">
+          <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+            {row.nombre ?? "—"}
+          </Typography>
+          <BillingChip billing={row.billing} />
+        </Stack>
+
+        <Typography variant="caption" color="text.secondary">
+          Cliente #{row.idCliente ?? "—"}
+          {cuotaVig ? ` · Cuota ${fmtMoney(Number(cuotaVig))}` : ""}
+        </Typography>
+
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{
+            mt: 0.25,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+          }}
+        >
+          {buildAddress(row) || "Sin dirección"}
+        </Typography>
+
+        <Stack
+          direction="row"
+          spacing={0.5}
+          justifyContent="flex-end"
+          sx={{ mt: 0.5 }}
+        >
+          <Tooltip title="Copiar dirección">
+            <span>
+              <IconButton size="small" onClick={() => onCopyAddress(row)}>
+                <ContentCopyIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Abrir en Maps">
+            <span>
+              <IconButton size="small" onClick={() => onOpenMaps(row)}>
+                <MapIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title={hasPhone ? "WhatsApp" : "Sin teléfono"}>
+            <span>
+              <IconButton
+                size="small"
+                color="success"
+                onClick={() => hasPhone && onOpenWhatsApp(row)}
+                disabled={!hasPhone}
+              >
+                <WhatsAppIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Ver ficha">
+            <span>
+              <IconButton size="small" onClick={() => onView(row)}>
+                <VisibilityIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Stack>
+      </Stack>
+    </Paper>
+  );
+}
+
 export default function CollectorClientsTable() {
   const navigate = useNavigate();
   const { ctxId, items, q, loading, err, fetchClientsByCollector, setQ } =
     useCollector();
+
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const rows = Array.isArray(items) ? items : [];
   const [localSearch, setLocalSearch] = useState(q || "");
@@ -133,19 +233,23 @@ export default function CollectorClientsTable() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localSearch]);
 
-  const load = useCallback(async () => {
-    try {
-      await fetchClientsByCollector({
-        full: 1, // trae TODO el padrón asignado (sin page/limit)
-        q,
-        sortBy,
-        sortDir,
-      });
-    } catch (e) {
-      const msg = e?.response?.data?.message || e?.message || "Error al cargar";
-      setLocalErr(msg);
-    }
-  }, [fetchClientsByCollector, q, sortBy, sortDir]);
+  const load = useCallback(
+    async () => {
+      try {
+        await fetchClientsByCollector({
+          full: 1, // trae TODO el padrón asignado (sin page/limit)
+          q,
+          sortBy,
+          sortDir,
+        });
+      } catch (e) {
+        const msg =
+          e?.response?.data?.message || e?.message || "Error al cargar";
+        setLocalErr(msg);
+      }
+    },
+    [fetchClientsByCollector, q, sortBy, sortDir]
+  );
 
   useEffect(() => {
     load();
@@ -219,15 +323,73 @@ export default function CollectorClientsTable() {
   const toggleFilter = (key) =>
     setStatusFilter((prev) => (prev === key ? "all" : key));
 
+  const errorMsg = err || localErr;
+
   return (
     <Paper elevation={0} sx={{ borderRadius: 2, overflow: "hidden" }}>
-      <Toolbar sx={{ gap: 1, flexWrap: "wrap", alignItems: "center" }}>
-        <Typography variant="h6" sx={{ fontWeight: 800 }}>
-          Mis clientes · {loading && rows.length === 0 ? "…" : counts.all}
-        </Typography>
+      {/* Toolbar responsive */}
+      <Toolbar
+        sx={{
+          gap: 1,
+          flexWrap: "wrap",
+          alignItems: { xs: "stretch", sm: "center" },
+          flexDirection: { xs: "column", sm: "row" },
+          p: 1.5,
+        }}
+      >
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{ width: { xs: "100%", sm: "auto" } }}
+        >
+          <Typography variant="h6" sx={{ fontWeight: 800 }}>
+            Mis clientes · {loading && rows.length === 0 ? "…" : counts.all}
+          </Typography>
+          <Stack
+            direction="row"
+            spacing={0.5}
+            sx={{ display: { xs: "flex", sm: "none" } }}
+          >
+            <Tooltip title={sortLabel}>
+              <span>
+                <IconButton
+                  onClick={handleToggleSort}
+                  disabled={loading}
+                  aria-label="Alternar orden"
+                  size="small"
+                >
+                  <SwapVertIcon
+                    fontSize="small"
+                    style={{
+                      transform:
+                        sortDir === "asc" ? "rotate(0deg)" : "rotate(180deg)",
+                      transition: "transform 120ms ease",
+                    }}
+                  />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="Refrescar">
+              <span>
+                <IconButton
+                  onClick={handleRefresh}
+                  disabled={loading}
+                  size="small"
+                >
+                  <RefreshIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Stack>
+        </Stack>
 
         <Box
-          sx={{ flex: 1, minWidth: 220, maxWidth: 520, ml: { xs: 0, md: 2 } }}
+          sx={{
+            flex: 1,
+            minWidth: { xs: "100%", sm: 220 },
+            maxWidth: { xs: "100%", md: 520 },
+          }}
         >
           <TextField
             size="small"
@@ -245,42 +407,62 @@ export default function CollectorClientsTable() {
           />
         </Box>
 
-        <Tooltip title={sortLabel}>
-          <span>
-            <IconButton
-              onClick={handleToggleSort}
-              disabled={loading}
-              aria-label="Alternar orden"
-            >
-              <SwapVertIcon
-                fontSize="small"
-                style={{
-                  transform:
-                    sortDir === "asc" ? "rotate(0deg)" : "rotate(180deg)",
-                  transition: "transform 120ms ease",
-                }}
-              />
-            </IconButton>
-          </span>
-        </Tooltip>
+        {/* Botones en desktop */}
+        <Stack
+          direction="row"
+          spacing={0.5}
+          sx={{ display: { xs: "none", sm: "flex" } }}
+        >
+          <Tooltip title={sortLabel}>
+            <span>
+              <IconButton
+                onClick={handleToggleSort}
+                disabled={loading}
+                aria-label="Alternar orden"
+              >
+                <SwapVertIcon
+                  fontSize="small"
+                  style={{
+                    transform:
+                      sortDir === "asc" ? "rotate(0deg)" : "rotate(180deg)",
+                    transition: "transform 120ms ease",
+                  }}
+                />
+              </IconButton>
+            </span>
+          </Tooltip>
 
-        <Tooltip title="Refrescar">
-          <span>
-            <IconButton onClick={handleRefresh} disabled={loading}>
-              <RefreshIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
+          <Tooltip title="Refrescar">
+            <span>
+              <IconButton onClick={handleRefresh} disabled={loading}>
+                <RefreshIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Stack>
 
-        {(err || localErr) && (
-          <Typography variant="body2" color="error" sx={{ ml: 1 }}>
-            {err || localErr}
+        {errorMsg && (
+          <Typography
+            variant="body2"
+            color="error"
+            sx={{ ml: { sm: 1 }, mt: { xs: 0.5, sm: 0 } }}
+          >
+            {errorMsg}
           </Typography>
         )}
 
         {/* Filtros/leyenda (clicables) */}
-        <Box sx={{ ml: "auto" }}>
-          <Stack direction="row" spacing={1} alignItems="center">
+        <Box sx={{ width: "100%", mt: 0.5 }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            sx={{
+              overflowX: "auto",
+              pb: 0.5,
+              "&::-webkit-scrollbar": { height: 4 },
+            }}
+          >
             <Chip
               size="small"
               color="warning"
@@ -313,112 +495,157 @@ export default function CollectorClientsTable() {
         </Box>
       </Toolbar>
 
-      <TableContainer>
-        <Table size="small" aria-label="Tabla de clientes (cobrador)">
-          <TableHead>
-            <TableRow>
-              <TableCell>N° Cliente</TableCell>
-              <TableCell>Nombre</TableCell>
-              <TableCell>Dirección</TableCell>
-              <TableCell>Estado</TableCell>
-              <TableCell align="right">Acciones</TableCell>
-            </TableRow>
-          </TableHead>
+      {/* LISTA MOBILE */}
+      {isMobile && (
+        <Box sx={{ px: 1.5, pb: 1.5 }}>
+          {visibleRows.length > 0 ? (
+            visibleRows.map((r) => (
+              <MobileClientCard
+                key={r.id || r._id || r.idCliente}
+                row={r}
+                onCopyAddress={copyAddress}
+                onOpenMaps={openMaps}
+                onOpenWhatsApp={openWhatsApp}
+                onView={handleView}
+              />
+            ))
+          ) : loading ? (
+            <Box py={3} textAlign="center">
+              <Typography variant="body2" color="text.secondary">
+                Cargando…
+              </Typography>
+            </Box>
+          ) : errorMsg ? (
+            <Box py={3} textAlign="center">
+              <Typography variant="body2" color="error">
+                Error: {errorMsg}
+              </Typography>
+            </Box>
+          ) : (
+            <Box py={3} textAlign="center">
+              <Typography variant="body2" color="text.secondary">
+                Sin resultados
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      )}
 
-          <TableBody>
-            {visibleRows.length > 0 ? (
-              visibleRows.map((r) => {
-                const cuotaVig =
-                  r?.cuotaVigente ??
-                  (r?.usarCuotaIdeal ? r?.cuotaIdeal : r?.cuota);
-                return (
-                  <TableRow hover key={r.id || r._id || r.idCliente}>
-                    <TableCell>{r.idCliente ?? "—"}</TableCell>
-                    <TableCell>{r.nombre ?? "—"}</TableCell>
-                    <TableCell>{buildAddress(r) || "—"}</TableCell>
+      {/* TABLA DESKTOP */}
+      {!isMobile && (
+        <TableContainer>
+          <Table size="small" aria-label="Tabla de clientes (cobrador)">
+            <TableHead>
+              <TableRow>
+                <TableCell>N° Cliente</TableCell>
+                <TableCell>Nombre</TableCell>
+                <TableCell>Dirección</TableCell>
+                <TableCell>Estado</TableCell>
+                <TableCell align="right">Acciones</TableCell>
+              </TableRow>
+            </TableHead>
 
-                    <TableCell>
-                      <BillingChip billing={r.billing} />
-                    </TableCell>
+            <TableBody>
+              {visibleRows.length > 0 ? (
+                visibleRows.map((r) => {
+                  return (
+                    <TableRow
+                      hover
+                      key={r.id || r._id || r.idCliente}
+                    >
+                      <TableCell>{r.idCliente ?? "—"}</TableCell>
+                      <TableCell>{r.nombre ?? "—"}</TableCell>
+                      <TableCell>{buildAddress(r) || "—"}</TableCell>
 
-                    <TableCell align="right" style={{ whiteSpace: "nowrap" }}>
-                      <Tooltip title="Copiar dirección">
-                        <span>
-                          <IconButton
-                            size="small"
-                            onClick={() => copyAddress(r)}
-                          >
-                            <ContentCopyIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title="Abrir en Maps">
-                        <span>
-                          <IconButton size="small" onClick={() => openMaps(r)}>
-                            <MapIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title="WhatsApp">
-                        <span>
-                          <IconButton
-                            size="small"
-                            color="success"
-                            onClick={() => openWhatsApp(r)}
-                            disabled={!digits(r?.telefono || "")}
-                          >
-                            <WhatsAppIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title="Ver ficha">
-                        <span>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleView(r)}
-                          >
-                            <VisibilityIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            ) : loading ? (
-              <TableRow>
-                <TableCell colSpan={6} align="center">
-                  <Box py={3}>
-                    <Typography variant="body2" color="text.secondary">
-                      Cargando…
-                    </Typography>
-                  </Box>
-                </TableCell>
-              </TableRow>
-            ) : err || localErr ? (
-              <TableRow>
-                <TableCell colSpan={6} align="center">
-                  <Box py={3}>
-                    <Typography variant="body2" color="error">
-                      Error: {err || localErr}
-                    </Typography>
-                  </Box>
-                </TableCell>
-              </TableRow>
-            ) : (
-              <TableRow>
-                <TableCell colSpan={6} align="center">
-                  <Box py={3}>
-                    <Typography variant="body2" color="text.secondary">
-                      Sin resultados
-                    </Typography>
-                  </Box>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+                      <TableCell>
+                        <BillingChip billing={r.billing} />
+                      </TableCell>
+
+                      <TableCell
+                        align="right"
+                        style={{ whiteSpace: "nowrap" }}
+                      >
+                        <Tooltip title="Copiar dirección">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() => copyAddress(r)}
+                            >
+                              <ContentCopyIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="Abrir en Maps">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() => openMaps(r)}
+                            >
+                              <MapIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="WhatsApp">
+                          <span>
+                            <IconButton
+                              size="small"
+                              color="success"
+                              onClick={() => openWhatsApp(r)}
+                              disabled={!digits(r?.telefono || "")}
+                            >
+                              <WhatsAppIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="Ver ficha">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleView(r)}
+                            >
+                              <VisibilityIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              ) : loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">
+                    <Box py={3}>
+                      <Typography variant="body2" color="text.secondary">
+                        Cargando…
+                      </Typography>
+                    </Box>
+                  </TableCell>
+                </TableRow>
+              ) : errorMsg ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">
+                    <Box py={3}>
+                      <Typography variant="body2" color="error">
+                        Error: {errorMsg}
+                      </Typography>
+                    </Box>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">
+                    <Box py={3}>
+                      <Typography variant="body2" color="text.secondary">
+                        Sin resultados
+                      </Typography>
+                    </Box>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
     </Paper>
   );
 }

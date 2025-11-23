@@ -58,6 +58,14 @@ export default function ApplyPaymentDialog({
         .reduce((acc, r) => acc + Number(r.due || 0), 0),
     [rows]
   );
+
+  const autoTotal = useMemo(() => {
+    if (!Array.isArray(debt)) return 0;
+    return debt
+      .filter((p) => (p?.balance ?? 0) > 0)
+      .reduce((a, b) => a + (Number(b.balance) || 0), 0);
+  }, [debt]);
+
   const updateRow = (period, checked) =>
     setRows((rows) =>
       rows.map((x) => (x.period === period ? { ...x, selected: checked } : x))
@@ -86,50 +94,124 @@ export default function ApplyPaymentDialog({
     }
   };
 
+  const hasClient = !!client;
+  const noPendingRows = rows.length === 0;
+
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Aplicar pago</DialogTitle>
+      <DialogTitle>
+        <Stack spacing={0.25}>
+          <Typography variant="h6" fontWeight={800}>
+            Aplicar pago
+          </Typography>
+          {hasClient && (
+            <Typography variant="body2" color="text.primary" noWrap>
+              {client.nombre} · #{client.idCliente ?? "s/n"}
+            </Typography>
+          )}
+        </Stack>
+      </DialogTitle>
+
       <DialogContent dividers>
-        <Tabs value={tab} onChange={(_e, v) => setTab(v)} sx={{ mb: 1 }}>
-          <Tab label="Automático (FIFO)" value="auto" />
-          <Tab label="Manual (por período)" value="manual" />
+        <Tabs
+          value={tab}
+          onChange={(_, newValue) => setTab(newValue)}
+          variant="fullWidth"
+          textColor="primary"
+          indicatorColor="primary"
+          TabIndicatorProps={{
+            sx: {
+              height: 3,
+              borderRadius: 999,
+            },
+          }}
+          sx={{ mb: 2 }}
+        >
+          <Tab
+            value="auto"
+            label="Automático (FIFO)"
+            sx={{
+              textTransform: "none",
+              fontSize: 13,
+              minHeight: 40,
+              "&.Mui-selected": {
+                bgcolor: "action.selected",
+                color: "text.primary",
+                borderRadius: 999,
+              },
+            }}
+          />
+          <Tab
+            value="manual"
+            label="Manual (por período)"
+            sx={{
+              textTransform: "none",
+              fontSize: 13,
+              minHeight: 40,
+              "&.Mui-selected": {
+                bgcolor: "action.selected",
+                color: "text.primary",
+                borderRadius: 999,
+              },
+            }}
+          />
         </Tabs>
 
         {tab === "auto" ? (
-          <Stack spacing={1}>
-            <Typography variant="body2" color="text.secondary">
-              Se aplica desde la deuda más antigua. Si sobra, queda como
-              crédito.
+          <Stack spacing={1.5}>
+            <Typography variant="body2" color="text.primary">
+              El sistema aplica el pago empezando por la deuda más antigua. Si
+              el importe supera la deuda, el resto queda como crédito a favor.
             </Typography>
-            <Paper variant="outlined" sx={{ p: 1 }}>
-              <Stack direction="row" justifyContent="space-between">
-                <Typography color="text.secondary">Deuda detectada</Typography>
-                <Typography fontWeight={800}>
-                  {fmtMoney(
-                    Number(
-                      debt
-                        ?.filter((p) => (p.balance ?? 0) > 0)
-                        .reduce((a, b) => a + (b.balance || 0), 0)
-                    ) || 0
-                  )}
-                </Typography>
-              </Stack>
+
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 1.5,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <Typography color="text.primary" variant="body2">
+                Deuda detectada
+              </Typography>
+              <Typography fontWeight={800}>
+                {fmtMoney(Number(autoTotal) || 0)}
+              </Typography>
             </Paper>
+
+            {autoTotal <= 0 && (
+              <Typography variant="body2" color="text.primary">
+                No se detectan saldos pendientes. Si existe un pago adelantado,
+                se registrará como crédito.
+              </Typography>
+            )}
           </Stack>
         ) : (
-          <Stack spacing={1}>
-            <Typography variant="body2" color="text.secondary">
-              Seleccioná períodos a cancelar. El total es la suma.
+          <Stack spacing={1.5}>
+            <Typography variant="body2" color="text.primary">
+              Seleccioná los períodos a cancelar. El total es la suma de los
+              montos seleccionados.
             </Typography>
-            <Stack spacing={0.75} sx={{ maxHeight: 300, overflow: "auto" }}>
+
+            <Stack
+              spacing={0.75}
+              sx={{ maxHeight: 300, overflow: "auto", pr: 0.5 }}
+            >
               {rows.length ? (
                 rows.map((row) => (
-                  <Stack
+                  <Paper
                     key={row.period}
-                    direction="row"
-                    alignItems="center"
-                    spacing={1}
-                    justifyContent="space-between"
+                    variant="outlined"
+                    sx={{
+                      px: 1,
+                      py: 0.5,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      borderRadius: 2,
+                    }}
                   >
                     <FormControlLabel
                       control={
@@ -144,31 +226,38 @@ export default function ApplyPaymentDialog({
                       label={
                         <Typography variant="body2">{row.period}</Typography>
                       }
-                      sx={{ mr: 1 }}
+                      sx={{ m: 0, mr: 1 }}
                     />
                     <Typography
                       variant="body2"
-                      color="text.secondary"
+                      color="text.primary"
                       sx={{ minWidth: 140, textAlign: "right" }}
                     >
                       A pagar: {fmtMoney(row.due)}
                     </Typography>
-                  </Stack>
+                  </Paper>
                 ))
               ) : (
-                <Typography variant="body2" color="text.secondary">
-                  No hay períodos con saldo pendiente.
+                <Typography variant="body2" color="text.primary">
+                  No hay períodos con saldo pendiente para aplicar manualmente.
                 </Typography>
               )}
             </Stack>
+
             <Divider />
-            <Stack direction="row" justifyContent="space-between">
-              <Typography>Total seleccionado</Typography>
+
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              alignItems="center"
+            >
+              <Typography variant="body2">Total seleccionado</Typography>
               <Typography fontWeight={800}>{fmtMoney(totalManual)}</Typography>
             </Stack>
           </Stack>
         )}
       </DialogContent>
+
       <DialogActions>
         <Button onClick={onClose} disabled={payLoading}>
           Cancelar
@@ -178,7 +267,9 @@ export default function ApplyPaymentDialog({
           startIcon={<PaidIcon />}
           onClick={handleConfirm}
           disabled={
-            payLoading || !client || (tab === "manual" && totalManual <= 0)
+            payLoading ||
+            !hasClient ||
+            (tab === "manual" && (totalManual <= 0 || noPendingRows))
           }
         >
           {payLoading ? "Registrando…" : "Confirmar pago"}

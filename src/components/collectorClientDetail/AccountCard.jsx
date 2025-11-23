@@ -11,7 +11,11 @@ import {
   LinearProgress,
   Tooltip,
   IconButton,
+  Box,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
+
 import TuneIcon from "@mui/icons-material/Tune";
 import ExpandMoreRounded from "@mui/icons-material/ExpandMoreRounded";
 import ExpandLessRounded from "@mui/icons-material/ExpandLessRounded";
@@ -113,6 +117,9 @@ export default function AccountCard({
   const grouped = useGroupedDebt(debt);
   const [showAll, setShowAll] = useState(false);
 
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
   const dueCount = useMemo(
     () => grouped.filter((p) => p.balance > 0 && p.status !== "future").length,
     [grouped]
@@ -140,18 +147,36 @@ export default function AccountCard({
   }, [grouped, showAll]);
 
   return (
-    <Paper variant="outlined" sx={{ p: 2 }}>
+    <Paper
+      variant="outlined"
+      sx={{
+        p: 2,
+        borderRadius: 3,
+      }}
+    >
+      {/* Header */}
       <Stack
         direction="row"
         alignItems="center"
         justifyContent="space-between"
         mb={1}
+        spacing={1}
       >
-        <Typography variant="subtitle1" fontWeight={800}>
-          Estado de cuenta
-        </Typography>
+        <Stack spacing={0.25}>
+          <Typography variant="subtitle1" fontWeight={800}>
+            Estado de cuenta
+          </Typography>
+          {!debtLoading && (
+            <Typography variant="caption" color="text.secondary">
+              Resumen por período (mensual)
+            </Typography>
+          )}
+        </Stack>
+
         {!debtLoading && grouped.length > 8 && (
-          <Tooltip title={showAll ? "Ver menos" : "Ver todo"}>
+          <Tooltip
+            title={showAll ? "Ver menos períodos" : "Ver todos los períodos"}
+          >
             <IconButton size="small" onClick={() => setShowAll((s) => !s)}>
               {showAll ? <ExpandLessRounded /> : <ExpandMoreRounded />}
             </IconButton>
@@ -160,7 +185,7 @@ export default function AccountCard({
       </Stack>
 
       {/* Badges resumen */}
-      <Stack direction="row" spacing={1} flexWrap="wrap" mb={1}>
+      <Stack direction="row" spacing={1} flexWrap="wrap" mb={1.5} rowGap={0.75}>
         {debtLoading ? (
           <>
             <Skeleton variant="rounded" height={24} width={120} />
@@ -190,7 +215,18 @@ export default function AccountCard({
       </Stack>
 
       {/* Lista de períodos */}
-      <Stack spacing={0.5} sx={{ maxHeight: 220, overflow: "auto", pr: 0.5 }}>
+      <Stack
+        spacing={0.5}
+        sx={{
+          maxHeight: isMobile ? 260 : 220,
+          overflow: "auto",
+          pr: 0.5,
+          "&::-webkit-scrollbar": {
+            height: 4,
+            width: 4,
+          },
+        }}
+      >
         {debtLoading ? (
           <>
             <Skeleton height={22} />
@@ -221,57 +257,88 @@ export default function AccountCard({
                   exit={{ opacity: 0, translateY: -6 }}
                   transition={{ duration: 0.18 }}
                 >
-                  <Stack spacing={0.25}>
-                    <Stack
-                      direction="row"
-                      alignItems="center"
-                      justifyContent="space-between"
-                    >
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Typography variant="body2" fontWeight={700}>
-                          {p.period}
-                        </Typography>
-                        <Chip
-                          size="small"
-                          color={chipCfg.color}
-                          variant={chipCfg.variant}
-                          label={chipCfg.label}
-                        />
-                      </Stack>
-                      <Typography
-                        variant="body2"
-                        fontWeight={800}
-                        color={
-                          p.balance > 0
-                            ? "warning.main"
-                            : p.balance < 0
-                            ? "info.main"
-                            : "success.main"
-                        }
+                  <Box
+                    sx={{
+                      p: 0.75,
+                      borderRadius: 2,
+                      border: "1px solid",
+                      borderColor:
+                        p.status === "due"
+                          ? "warning.light"
+                          : p.status === "credit"
+                          ? "info.light"
+                          : "divider",
+                      bgcolor:
+                        p.status === "future" ? "action.hover" : "transparent",
+                    }}
+                  >
+                    <Stack spacing={0.25}>
+                      <Stack
+                        direction="row"
+                        alignItems="center"
+                        justifyContent="space-between"
                       >
-                        {fmtMoney(Number(p.balance || 0))}
-                      </Typography>
-                    </Stack>
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          alignItems="center"
+                          sx={{ minWidth: 0 }}
+                        >
+                          <Typography
+                            variant="body2"
+                            fontWeight={700}
+                            sx={{ whiteSpace: "nowrap" }}
+                          >
+                            {p.period}
+                          </Typography>
+                          <Chip
+                            size="small"
+                            color={chipCfg.color}
+                            variant={chipCfg.variant}
+                            label={chipCfg.label}
+                          />
+                        </Stack>
+                        <Typography
+                          variant="body2"
+                          fontWeight={800}
+                          color={
+                            p.balance > 0
+                              ? "warning.main"
+                              : p.balance < 0
+                              ? "info.main"
+                              : "success.main"
+                          }
+                          sx={{ ml: 1 }}
+                        >
+                          {fmtMoney(Number(p.balance || 0))}
+                        </Typography>
+                      </Stack>
 
-                    <LinearProgress
-                      variant="determinate"
-                      value={ratio}
-                      sx={{
-                        height: 6,
-                        borderRadius: 999,
-                        bgcolor: "action.hover",
-                      }}
-                    />
+                      <LinearProgress
+                        variant="determinate"
+                        value={ratio}
+                        sx={{
+                          mt: 0.5,
+                          height: 6,
+                          borderRadius: 999,
+                          bgcolor: "action.hover",
+                        }}
+                      />
 
-                    <Stack direction="row" justifyContent="space-between">
-                      <Typography variant="caption" color="text.secondary">
-                        Cargo: {fmtMoney(Number(p.charge || 0))}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Pagado: {fmtMoney(paidAmt)}
-                      </Typography>
+                      <Stack
+                        direction="row"
+                        justifyContent="space-between"
+                        sx={{ mt: 0.25 }}
+                      >
+                        <Typography variant="caption" color="text.secondary">
+                          Cargo: {fmtMoney(Number(p.charge || 0))}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Pagado: {fmtMoney(paidAmt)}
+                        </Typography>
+                      </Stack>
                     </Stack>
-                  </Stack>
+                  </Box>
                 </motion.div>
               );
             })}
@@ -283,28 +350,48 @@ export default function AccountCard({
         )}
       </Stack>
 
-      <Divider sx={{ my: 1 }} />
+      <Divider sx={{ my: 1.5 }} />
 
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Typography color="text.secondary">Deuda detectada</Typography>
-        <motion.span
-          key={debtLoading ? "loading" : totalDue}
-          initial={{ opacity: 0, filter: "blur(2px)" }}
-          animate={{ opacity: 1, filter: "blur(0px)" }}
-          transition={{ duration: 0.2 }}
-          style={{ fontWeight: 800 }}
+      {/* Resumen + botón */}
+      <Stack spacing={1}>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="baseline"
         >
-          {debtLoading ? "—" : fmtMoney(Number(totalDue) || 0)}
-        </motion.span>
-      </Stack>
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Deuda detectada
+            </Typography>
+            {!debtLoading && (
+              <Typography variant="caption" color="text.disabled">
+                (excluye períodos futuros)
+              </Typography>
+            )}
+          </Box>
 
-      <Stack direction="row" spacing={1} mt={1}>
+          <Box
+            component={motion.span}
+            key={debtLoading ? "loading" : totalDue}
+            initial={{ opacity: 0, filter: "blur(2px)" }}
+            animate={{ opacity: 1, filter: "blur(0px)" }}
+            transition={{ duration: 0.2 }}
+            sx={{
+              fontWeight: 800,
+              fontSize: isMobile ? "1rem" : "1.05rem",
+            }}
+          >
+            {debtLoading ? "—" : fmtMoney(Number(totalDue) || 0)}
+          </Box>
+        </Stack>
+
         <Button
           variant="contained"
           size="small"
           startIcon={<TuneIcon />}
           onClick={onOpenApply}
           disabled={!canApply}
+          fullWidth={isMobile}
         >
           Aplicar pago
         </Button>

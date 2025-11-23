@@ -1,9 +1,22 @@
+// src/components/admin/sections/UsuariosSection.jsx
 import React from "react";
 import UsuariosPanel from "../../UsuariosPanel";
 
 export default function UsuariosSection({
-  users, loading, page, total, limit,
-  onPageChange, onSearch, onSelectUser, onChangeRole, onAssignCobrador, onAssignVendedor,
+  users,
+  loading,
+  page,
+  total,
+  limit,
+  onPageChange,
+  onSearch,
+  onSelectUser,
+  onChangeRole,
+  onAssignCobrador,
+  onAssignVendedor,
+  onChangeCommission, // 👈 NUEVO
+  onChangeCommissionGraceDays, // 👈 NUEVO
+  onChangeCommissionPenaltyPerDay, // 👈 NUEVO
 }) {
   return (
     <UsuariosPanel
@@ -18,6 +31,9 @@ export default function UsuariosSection({
       onChangeRole={onChangeRole}
       onAssignCobrador={onAssignCobrador}
       onAssignVendedor={onAssignVendedor}
+      onChangeCommission={onChangeCommission}
+      onChangeCommissionGraceDays={onChangeCommissionGraceDays}
+      onChangeCommissionPenaltyPerDay={onChangeCommissionPenaltyPerDay}
     />
   );
 }
