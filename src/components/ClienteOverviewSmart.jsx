@@ -85,6 +85,98 @@ export default function ClienteOverviewSmart({
     return Math.max(base, 1 + (Array.isArray(family) ? family.length : 0));
   }, [item, family]);
 
+  // ⚖️ Info de deuda simple (para el chip de “Al día / Debe”)
+  // Esperamos algo tipo:
+  //   item.__debt = {
+  //     status: "up_to_date" | "in_arrears" | "al_dia" | "en_mora" | ...,
+  //     balance: number (puede venir como string),
+  //     // opcionales: saldo, amount, monto...
+  //   }
+  const debtInfo =
+    (displayItem && displayItem.__debt) || (item && item.__debt) || null;
+
+  let debtLabel = "Estado de deuda: sin datos";
+  let debtColor = "default";
+  let debtVariant = "outlined";
+
+  if (debtInfo) {
+    const status = String(debtInfo.status || "").toLowerCase();
+
+    const hasBalanceField =
+      typeof debtInfo.balance !== "undefined" ||
+      typeof debtInfo.saldo !== "undefined" ||
+      typeof debtInfo.amount !== "undefined" ||
+      typeof debtInfo.monto !== "undefined";
+
+    const balanceRaw =
+      debtInfo.balance ??
+      debtInfo.saldo ??
+      debtInfo.amount ??
+      debtInfo.monto ??
+      null;
+
+    const balance =
+      typeof balanceRaw === "number"
+        ? balanceRaw
+        : balanceRaw != null && !Number.isNaN(Number(balanceRaw))
+        ? Number(balanceRaw)
+        : null;
+
+    // 1) Si viene status explícito, manda status
+    if (status) {
+      if (["up_to_date", "al_dia", "ok"].includes(status)) {
+        debtLabel = "Al día";
+        debtColor = "success";
+        debtVariant = "filled";
+      } else if (
+        ["in_arrears", "en_mora", "debe", "con_deuda"].includes(status)
+      ) {
+        if (balance != null && balance > 0) {
+          debtLabel = `Debe ${fmtMoney(balance)}`;
+        } else {
+          debtLabel = "Con deuda";
+        }
+        debtColor = "error";
+        debtVariant = "filled";
+      } else {
+        // status raro → no inventamos nada; usamos balance si existe
+        if (hasBalanceField && balance != null) {
+          if (balance > 0) {
+            debtLabel = `Debe ${fmtMoney(balance)}`;
+            debtColor = "error";
+            debtVariant = "filled";
+          } else {
+            debtLabel = "Al día";
+            debtColor = "success";
+            debtVariant = "filled";
+          }
+        } else {
+          debtLabel = "Estado de deuda: sin datos";
+          debtColor = "default";
+          debtVariant = "outlined";
+        }
+      }
+    }
+    // 2) Sin status pero con balance interpretable
+    else if (hasBalanceField && balance != null) {
+      if (balance > 0) {
+        debtLabel = `Debe ${fmtMoney(balance)}`;
+        debtColor = "error";
+        debtVariant = "filled";
+      } else {
+        debtLabel = "Al día";
+        debtColor = "success";
+        debtVariant = "filled";
+      }
+    }
+    // 3) Hay __debt pero sin nada usable → seguimos diciendo "sin datos" (no inventamos "al día")
+    else {
+      debtLabel = "Estado de deuda: sin datos";
+      debtColor = "default";
+      debtVariant = "outlined";
+    }
+  }
+
   async function handleReprice() {
     if (!item?.idCliente) {
       showToast("Falta idCliente para recalcular.", "warning");
@@ -110,7 +202,7 @@ export default function ClienteOverviewSmart({
               isNum(data?.cuotaIdeal) ? fmtMoney(data.cuotaIdeal) : "—"
             }`
           : "Recálculo completado",
-        "success"
+        data?.ok ? "success" : "info"
       );
       onRefresh?.();
     } catch (e) {
@@ -161,39 +253,41 @@ export default function ClienteOverviewSmart({
           </Typography>
 
           {item?.activo ? (
-            <Chip label="Activo" color="success" />
+            <Chip label="Activo" color="success" size="small" />
           ) : (
-            <Chip label="Baja" />
-          )}
-
-          {item?.rol && (
-            <Chip
-              icon={<BadgeRoundedIcon />}
-              label={item.rol}
-              variant="contained"
-              color="primary"
-            />
-          )}
-
-          {item?.tipoFactura && item.tipoFactura !== "none" && (
-            <Chip
-              icon={<ReceiptLongRoundedIcon />}
-              label={`Factura ${item.tipoFactura}`}
-              variant="outlined"
-            />
+            <Chip label="Baja" size="small" />
           )}
 
           {item?.idCliente && (
             <Chip
+              size="small"
               color="primary"
               variant="outlined"
               icon={<AccountTreeRoundedIcon />}
               label={`Grupo #${item.idCliente} (${integrantesCount})`}
             />
           )}
+
+          {item?.rol && (
+            <Chip
+              size="small"
+              icon={<BadgeRoundedIcon />}
+              label={item.rol}
+              variant="outlined"
+            />
+          )}
+
+          {item?.tipoFactura && item.tipoFactura !== "none" && (
+            <Chip
+              size="small"
+              icon={<ReceiptLongRoundedIcon />}
+              label={`Factura ${item.tipoFactura}`}
+              variant="outlined"
+            />
+          )}
         </Stack>
 
-        {/* right: Cuota VIGENTE + Acciones */}
+        {/* right: Cuota VIGENTE + Estado deuda + Acciones */}
         <Stack
           direction="row"
           spacing={1}
@@ -201,6 +295,7 @@ export default function ClienteOverviewSmart({
           flexWrap="wrap"
           justifyContent="flex-end"
         >
+          {/* Cuota vigente */}
           <Chip
             size="medium"
             color={usarIdeal ? "success" : "default"}
@@ -218,7 +313,15 @@ export default function ClienteOverviewSmart({
             }}
           />
 
-          <Tooltip title="Editar">
+          {/* Estado de deuda (solo chip, sin botón de cobrar) */}
+          <Chip
+            size="medium"
+            color={debtColor}
+            variant={debtVariant}
+            label={debtLabel}
+          />
+
+          <Tooltip title="Editar ficha del cliente">
             <span>
               <Button
                 variant="outlined"
@@ -232,33 +335,21 @@ export default function ClienteOverviewSmart({
           </Tooltip>
         </Stack>
       </Stack>
-    </Paper>
-  );
 
-  /* ------------------------------ Summary strip ---------------------------- */
-  const Summary = (
-    <Paper
-      elevation={0}
-      sx={{
-        p: 1.25,
-        borderRadius: 2,
-        border: "1px dashed",
-        borderColor: "divider",
-        mb: 2,
-        bgcolor: (t) =>
-          t.palette.mode === "dark"
-            ? "rgba(255,255,255,0.02)"
-            : "rgba(0,0,0,0.02)",
-      }}
-    >
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-        {/* Modo de cobro claro */}
+      {/* Subtira muy simple: modo de cobro + cobrador */}
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1}
+        mt={1}
+        flexWrap="wrap"
+        useFlexGap
+      >
         <Chip
           size="small"
           color={usarIdeal ? "success" : "default"}
           variant={usarIdeal ? "filled" : "outlined"}
           label={
-            usarIdeal ? "USANDO IDEAL (reglas)" : "USANDO HISTÓRICA (manual)"
+            usarIdeal ? "Usando cuota ideal (reglas)" : "Usando cuota manual"
           }
         />
         <Chip
@@ -267,41 +358,245 @@ export default function ClienteOverviewSmart({
           label={`Cobrador: ${item?.idCobrador ?? "—"}`}
           variant="outlined"
         />
-        <Chip
-          size="small"
-          label={`Edad máx.: ${displayItem?.edadMaxPoliza ?? "—"}`}
-          variant="outlined"
-        />
-        {item?.cremacion && (
-          <Chip
-            size="small"
-            icon={<LocalFireDepartmentOutlinedIcon />}
-            label="Cremación"
-            color="warning"
-            variant="outlined"
-          />
-        )}
-        {item?.parcela && (
-          <Chip
-            size="small"
-            icon={<ParkOutlinedIcon />}
-            label="Parcela"
-            color="success"
-            variant="outlined"
-          />
-        )}
-        {item?.emergencia && (
-          <Chip
-            size="small"
-            label="Emergencia"
-            color="warning"
-            variant="outlined"
-          />
-        )}
-        {item?.tarjeta && (
-          <Chip size="small" label="Tarjeta" color="info" variant="outlined" />
-        )}
       </Stack>
+    </Paper>
+  );
+
+  /* --------------------------- Resumen económico --------------------------- */
+  const ResumenEconomicoCard = (
+    <Paper
+      elevation={0}
+      sx={{
+        p: 2,
+        borderRadius: 2,
+        border: "1px solid",
+        borderColor: "divider",
+      }}
+    >
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        mb={1}
+      >
+        <Typography variant="subtitle1" fontWeight={800}>
+          Resumen económico
+        </Typography>
+
+        <Tooltip title="Recalcular cuota ideal del grupo">
+          <span>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={
+                repriceLoading ? (
+                  <CircularProgress size={16} />
+                ) : (
+                  <ReplayRoundedIcon />
+                )
+              }
+              onClick={handleReprice}
+              disabled={loading || repriceLoading || !item?.idCliente}
+            >
+              Recalcular ideal
+            </Button>
+          </span>
+        </Tooltip>
+      </Stack>
+
+      <Grid container spacing={1.5}>
+        {/* Bloque principal de cuotas */}
+        <Grid item xs={12}>
+          <LabelValue
+            label="Cuota vigente (se cobra hoy)"
+            value={vigente != null ? fmtMoney(vigente) : "—"}
+            bold
+          />
+        </Grid>
+
+        <Grid item xs={12} sm={6}>
+          <LabelValue
+            label="Cuota manual (histórica)"
+            value={cobrado != null ? fmtMoney(cobrado) : "—"}
+          />
+        </Grid>
+
+        <Grid item xs={12} sm={6}>
+          <LabelValue
+            label="Cuota ideal (reglas)"
+            value={ideal != null ? fmtMoney(ideal) : "—"}
+          />
+        </Grid>
+
+        {/* Desvío */}
+        <Grid item xs={12}>
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            flexWrap="wrap"
+          >
+            <LabelValue
+              label="Desvío vs ideal"
+              value={
+                desvAbs != null
+                  ? `${desvAbs >= 0 ? "+" : ""}${fmtMoney(desvAbs)}${
+                      desvPct != null ? ` (${desvPct.toFixed(1)}%)` : ""
+                    }`
+                  : "—"
+              }
+            />
+            {desvAbs != null && (
+              <Chip
+                size="small"
+                label={
+                  desvAbs > 0
+                    ? "Por encima del ideal"
+                    : desvAbs < 0
+                    ? "Por debajo del ideal"
+                    : "Igual al ideal"
+                }
+                color={
+                  desvAbs > 0 ? "success" : desvAbs < 0 ? "error" : "default"
+                }
+                variant="outlined"
+              />
+            )}
+          </Stack>
+        </Grid>
+
+        <Grid item xs={12}>
+          <Divider sx={{ my: 0.5 }} />
+        </Grid>
+
+        {/* Condiciones del plan */}
+        <Grid item xs={6}>
+          <LabelValue label="Integrantes del grupo" value={integrantesCount} />
+        </Grid>
+        <Grid item xs={6}>
+          <LabelValue
+            label="Edad máx. póliza"
+            value={displayItem?.edadMaxPoliza ?? "—"}
+          />
+        </Grid>
+
+        <Grid item xs={12}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <BooleanBadge label="Cremación" value={!!item?.cremacion} />
+            <BooleanBadge label="Parcela" value={!!item?.parcela} />
+            {item?.emergencia && (
+              <Chip size="small" label="Emergencia" color="warning" />
+            )}
+            {item?.tarjeta && (
+              <Chip size="small" label="Tarjeta" color="info" />
+            )}
+          </Stack>
+        </Grid>
+      </Grid>
+    </Paper>
+  );
+
+  /* ------------------------------- Ficha titular --------------------------- */
+  const FichaTitularCard = (
+    <Paper
+      elevation={0}
+      sx={{
+        p: 2,
+        borderRadius: 2,
+        border: "1px solid",
+        borderColor: "divider",
+      }}
+    >
+      <Stack direction="row" alignItems="center" spacing={1} mb={1.5}>
+        <InfoOutlinedIcon fontSize="small" />
+        <Typography variant="subtitle1" fontWeight={800}>
+          Ficha del titular
+        </Typography>
+      </Stack>
+
+      <Grid container spacing={1.5}>
+        {/* Identificación básica */}
+        <Grid item xs={6}>
+          <LabelValue label="N° Cliente" value={item?.idCliente ?? "—"} bold />
+        </Grid>
+        <Grid item xs={6}>
+          <LabelValue
+            label="Titular del grupo"
+            value={item?.nombreTitular ?? "—"}
+          />
+        </Grid>
+
+        <Grid item xs={12}>
+          <LabelValue label="Nombre" value={item?.nombre ?? "—"} />
+        </Grid>
+
+        {/* Contacto + documento */}
+        <Grid item xs={6}>
+          <LabelValue label="Teléfono" value={item?.telefono ?? "—"} />
+        </Grid>
+        <Grid item xs={6}>
+          <LabelValue label="CUIL" value={item?.cuil ?? "—"} />
+        </Grid>
+
+        <Grid item xs={6}>
+          <LabelValue label="Tipo doc." value={item?.docTipo ?? "—"} />
+        </Grid>
+        <Grid item xs={6}>
+          <LabelValue label="Documento" value={item?.documento ?? "—"} />
+        </Grid>
+
+        <Grid item xs={6}>
+          <LabelValue label="Sexo" value={item?.sexo ?? "—"} />
+        </Grid>
+        <Grid item xs={6}>
+          <LabelValue label="Edad" value={item?.edad ?? "—"} />
+        </Grid>
+
+        {/* Domicilio */}
+        <Grid item xs={12}>
+          <LabelValue label="Domicilio" value={item?.domicilio ?? "—"} />
+        </Grid>
+        <Grid item xs={4}>
+          <LabelValue label="Ciudad" value={item?.ciudad ?? "—"} />
+        </Grid>
+        <Grid item xs={4}>
+          <LabelValue label="Provincia" value={item?.provincia ?? "—"} />
+        </Grid>
+        <Grid item xs={4}>
+          <LabelValue label="CP" value={item?.cp ?? "—"} />
+        </Grid>
+
+        <Grid item xs={12}>
+          <Divider sx={{ my: 0.5 }} />
+        </Grid>
+
+        {/* Fechas clave */}
+        <Grid item xs={4}>
+          <LabelValue label="Ingreso" value={fmtDate(item?.ingreso)} />
+        </Grid>
+        <Grid item xs={4}>
+          <LabelValue label="Vigencia" value={fmtDate(item?.vigencia)} />
+        </Grid>
+        <Grid item xs={4}>
+          <LabelValue label="Baja" value={fmtDate(item?.baja)} />
+        </Grid>
+        <Grid item xs={4}>
+          <LabelValue label="F. aumento" value={fmtDate(item?.fechaAumento)} />
+        </Grid>
+        <Grid item xs={4}>
+          <LabelValue label="F. nacimiento" value={fmtDate(item?.fechaNac)} />
+        </Grid>
+        <Grid item xs={4}>
+          <LabelValue label="Actualizado" value={fmtDate(item?.updatedAt)} />
+        </Grid>
+
+        <Grid item xs={12}>
+          <LabelValue
+            label="Observaciones"
+            value={item?.observaciones ?? "—"}
+          />
+        </Grid>
+      </Grid>
     </Paper>
   );
 
@@ -343,7 +638,6 @@ export default function ClienteOverviewSmart({
               <TableCell align="center">Parcela</TableCell>
               <TableCell align="right">Edad</TableCell>
               <TableCell align="center">Estado</TableCell>
-              <TableCell align="right">Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -377,27 +671,6 @@ export default function ClienteOverviewSmart({
                       <Chip size="small" label="Baja" />
                     )}
                   </TableCell>
-                  <TableCell align="right">
-                    <Stack
-                      direction="row"
-                      spacing={1}
-                      justifyContent="flex-end"
-                    >
-                      <Button
-                        size="small"
-                        onClick={() => onViewMember?.(m._id)}
-                      >
-                        Ver
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => onEditMember?.(m._id)}
-                      >
-                        Editar
-                      </Button>
-                    </Stack>
-                  </TableCell>
                 </TableRow>
               ))}
           </TableBody>
@@ -420,316 +693,23 @@ export default function ClienteOverviewSmart({
     </Paper>
   );
 
-  /* ------------------------------- Pricing card ---------------------------- */
-  const PricingCard = (
-    <Paper
-      elevation={0}
-      sx={{
-        p: 2,
-        borderRadius: 2,
-        border: "1px solid",
-        borderColor: "divider",
-      }}
-    >
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        mb={1}
-      >
-        <Typography variant="subtitle1" fontWeight={800}>
-          Precio
-        </Typography>
-
-        {/* Modo de cobro (administrativo) */}
-        <Chip
-          size="small"
-          color={usarIdeal ? "success" : "default"}
-          variant={usarIdeal ? "filled" : "outlined"}
-          label={
-            usarIdeal ? "USANDO IDEAL (reglas)" : "USANDO HISTÓRICA (manual)"
-          }
-        />
-      </Stack>
-
-      <Grid container spacing={1.5}>
-        {/* Vigente al frente */}
-        <Grid item xs={12}>
-          <LabelValue
-            label="Cuota vigente (aplicada)"
-            value={vigente != null ? fmtMoney(vigente) : "—"}
-            bold
-          />
-        </Grid>
-
-        <Grid item xs={12} sm={6}>
-          <LabelValue
-            label="Cuota manual (histórica)"
-            value={cobrado != null ? fmtMoney(cobrado) : "—"}
-          />
-        </Grid>
-
-        <Grid item xs={12} sm={6}>
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="space-between"
-            spacing={1}
-          >
-            <LabelValue
-              label="Cuota ideal (reglas)"
-              value={ideal != null ? fmtMoney(ideal) : "—"}
-            />
-            <Tooltip title="Recalcular cuota ideal del grupo">
-              <span>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={
-                    repriceLoading ? (
-                      <CircularProgress size={16} />
-                    ) : (
-                      <ReplayRoundedIcon />
-                    )
-                  }
-                  onClick={handleReprice}
-                  disabled={loading || repriceLoading || !item?.idCliente}
-                >
-                  Recalcular
-                </Button>
-              </span>
-            </Tooltip>
-          </Stack>
-        </Grid>
-
-        {/* Traza simple */}
-        <Grid item xs={12}>
-          <Stack
-            direction="row"
-            spacing={1}
-            alignItems="center"
-            flexWrap="wrap"
-          >
-            <LabelValue
-              label="Desvío vs ideal"
-              value={
-                desvAbs != null
-                  ? `${desvAbs >= 0 ? "+" : ""}${fmtMoney(desvAbs)}${
-                      desvPct != null ? ` (${desvPct.toFixed(1)}%)` : ""
-                    }`
-                  : "—"
-              }
-            />
-            {desvAbs != null && (
-              <Chip
-                size="small"
-                label={
-                  desvAbs > 0
-                    ? "Por encima del ideal"
-                    : desvAbs < 0
-                    ? "Por debajo del ideal"
-                    : "Igual al ideal"
-                }
-                color={
-                  desvAbs > 0 ? "success" : desvAbs < 0 ? "error" : "default"
-                }
-                variant="outlined"
-              />
-            )}
-          </Stack>
-        </Grid>
-
-        <Grid item xs={12}>
-          <Divider sx={{ my: 0.5 }} />
-        </Grid>
-
-        <Grid item xs={4}>
-          <LabelValue label="Integrantes" value={integrantesCount} />
-        </Grid>
-        <Grid item xs={4}>
-          <LabelValue
-            label="Edad máx. póliza"
-            value={displayItem?.edadMaxPoliza ?? "—"}
-          />
-        </Grid>
-        <Grid item xs={4}>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <BooleanBadge label="Cremación" value={!!item?.cremacion} />
-            <BooleanBadge label="Parcela" value={!!item?.parcela} />
-          </Stack>
-        </Grid>
-
-        {/* Fechas útiles para auditoría */}
-        <Grid item xs={12}>
-          <Divider sx={{ my: 0.5 }} />
-        </Grid>
-        <Grid item xs={4}>
-          <LabelValue label="Vigencia" value={fmtDate(item?.vigencia)} />
-        </Grid>
-        <Grid item xs={4}>
-          <LabelValue label="F. aumento" value={fmtDate(item?.fechaAumento)} />
-        </Grid>
-        <Grid item xs={4}>
-          <LabelValue label="Actualizado" value={fmtDate(item?.updatedAt)} />
-        </Grid>
-      </Grid>
-    </Paper>
-  );
-
-  /* --------------------------- Info compact cards -------------------------- */
-  const IdentificacionCard = (
-    <Paper
-      elevation={0}
-      sx={{
-        p: 2,
-        borderRadius: 2,
-        border: "1px solid",
-        borderColor: "divider",
-      }}
-    >
-      <Stack direction="row" alignItems="center" spacing={1} mb={1}>
-        <InfoOutlinedIcon fontSize="small" />
-        <Typography variant="subtitle1" fontWeight={800}>
-          Identificación
-        </Typography>
-      </Stack>
-      <Grid container spacing={1.5}>
-        <Grid item xs={6}>
-          <LabelValue label="N° Cliente" value={item?.idCliente ?? "—"} bold />
-        </Grid>
-        <Grid item xs={6}>
-          <LabelValue
-            label="Titular del grupo"
-            value={item?.nombreTitular ?? "—"}
-          />
-        </Grid>
-        <Grid item xs={12}>
-          <LabelValue label="Nombre" value={item?.nombre ?? "—"} />
-        </Grid>
-        <Grid item xs={12}>
-          <LabelValue label="Domicilio" value={item?.domicilio ?? "—"} />
-        </Grid>
-        <Grid item xs={4}>
-          <LabelValue label="Ciudad" value={item?.ciudad ?? "—"} />
-        </Grid>
-        <Grid item xs={4}>
-          <LabelValue label="Provincia" value={item?.provincia ?? "—"} />
-        </Grid>
-        <Grid item xs={4}>
-          <LabelValue label="CP" value={item?.cp ?? "—"} />
-        </Grid>
-      </Grid>
-    </Paper>
-  );
-
-  const ContactoCard = (
-    <Paper
-      elevation={0}
-      sx={{
-        p: 2,
-        borderRadius: 2,
-        border: "1px solid",
-        borderColor: "divider",
-      }}
-    >
-      <Stack direction="row" alignItems="center" spacing={1} mb={1}>
-        <BadgeRoundedIcon fontSize="small" />
-        <Typography variant="subtitle1" fontWeight={800}>
-          Contacto & Documento
-        </Typography>
-      </Stack>
-      <Grid container spacing={1.5}>
-        <Grid item xs={6}>
-          <LabelValue label="Teléfono" value={item?.telefono ?? "—"} />
-        </Grid>
-        <Grid item xs={6}>
-          <LabelValue label="CUIL" value={item?.cuil ?? "—"} />
-        </Grid>
-        <Grid item xs={6}>
-          <LabelValue label="Tipo doc." value={item?.docTipo ?? "—"} />
-        </Grid>
-        <Grid item xs={6}>
-          <LabelValue label="Documento" value={item?.documento ?? "—"} />
-        </Grid>
-        <Grid item xs={6}>
-          <LabelValue label="Sexo" value={item?.sexo ?? "—"} />
-        </Grid>
-        <Grid item xs={6}>
-          <LabelValue label="Edad" value={item?.edad ?? "—"} />
-        </Grid>
-      </Grid>
-    </Paper>
-  );
-
-  const FechasNotasCard = (
-    <Paper
-      elevation={0}
-      sx={{
-        p: 2,
-        borderRadius: 2,
-        border: "1px solid",
-        borderColor: "divider",
-      }}
-    >
-      <Stack direction="row" alignItems="center" spacing={1} mb={1}>
-        <EventNoteRoundedIcon fontSize="small" />
-        <Typography variant="subtitle1" fontWeight={800}>
-          Fechas & Notas
-        </Typography>
-      </Stack>
-      <Grid container spacing={1.5}>
-        <Grid item xs={4}>
-          <LabelValue label="Ingreso" value={fmtDate(item?.ingreso)} />
-        </Grid>
-        <Grid item xs={4}>
-          <LabelValue label="Vigencia" value={fmtDate(item?.vigencia)} />
-        </Grid>
-        <Grid item xs={4}>
-          <LabelValue label="Baja" value={fmtDate(item?.baja)} />
-        </Grid>
-        <Grid item xs={4}>
-          <LabelValue label="F. aumento" value={fmtDate(item?.fechaAumento)} />
-        </Grid>
-        <Grid item xs={4}>
-          <LabelValue label="F. nacimiento" value={fmtDate(item?.fechaNac)} />
-        </Grid>
-        <Grid item xs={4}>
-          <LabelValue label="Actualizado" value={fmtDate(item?.updatedAt)} />
-        </Grid>
-        <Grid item xs={12}>
-          <LabelValue
-            label="Observaciones"
-            value={item?.observaciones ?? "—"}
-          />
-        </Grid>
-      </Grid>
-    </Paper>
-  );
-
   /* --------------------------------- Render -------------------------------- */
   return (
     <Box>
       {Header}
-      {Summary}
 
       <Grid container spacing={2}>
-        <Grid item xs={12} md={7}>
-          {FamilyCard}
+        <Grid item xs={12} md={6}>
+          {ResumenEconomicoCard}
         </Grid>
-        <Grid item xs={12} md={5}>
-          {PricingCard}
+        <Grid item xs={12} md={6}>
+          {FichaTitularCard}
         </Grid>
       </Grid>
 
       <Grid container spacing={2} sx={{ mt: 1 }}>
-        <Grid item xs={12} md={6}>
-          {IdentificacionCard}
-        </Grid>
-        <Grid item xs={12} md={6}>
-          {ContactoCard}
-        </Grid>
         <Grid item xs={12}>
-          {FechasNotasCard}
+          {FamilyCard}
         </Grid>
       </Grid>
 

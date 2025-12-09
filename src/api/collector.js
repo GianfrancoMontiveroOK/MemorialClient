@@ -21,29 +21,23 @@ const noStoreHeaders = { "Cache-Control": "no-cache" };
  * @param {string|number} [params.idCobrador]   (Opcional) forzar idCobrador; normalmente viene de la sesión
  */
 export const listCollectorClients = ({
-  full = 1,
   page = 1,
-  limit = 10,
+  limit = 50, // o 100 / 200, lo que quieras como máximo razonable
   q = "",
   sortBy = "createdAt",
   sortDir = "desc",
   idCobrador,
 } = {}) => {
   const params = {
-    q,
+    page,
+    limit,
+    q: String(q || "").trim(),
     sortBy,
     sortDir,
   };
 
-  // Si se especifica idCobrador, lo pasamos.
-  if (idCobrador != null) params.idCobrador = idCobrador;
-
-  // Si se pide "full", evitamos enviar page/limit para que el backend devuelva TODO.
-  if (full) {
-    params.full = 1;
-  } else {
-    params.page = page;
-    params.limit = limit;
+  if (idCobrador != null) {
+    params.idCobrador = idCobrador;
   }
 
   return axios.get("/collector/clientes", {

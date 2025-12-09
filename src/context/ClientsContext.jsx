@@ -244,20 +244,28 @@ export const ClientsProvider = ({ children }) => {
         // Por defecto, queremos groupInfo + family
         const optExpand = opts.hasOwnProperty("expand")
           ? String(opts.expand)
-          : "family";
+          : "family,debt";
 
         const res = await getClienteById(id, { expand: optExpand });
-        const root = res?.data ?? res; // payload crudo del backend ({data, family, __groupInfo})
+        const root = res?.data ?? res; // payload crudo del backend ({data, family, __groupInfo, __debt, ...})
 
         const rawData = root?.data ?? root;
         if (!rawData?._id) throw new Error("Cliente no encontrado");
 
-        // ✅ Priorizar __groupInfo del server
+        // ✅ Tomar groupInfo si viene
         const groupInfo =
           root?.__groupInfo ||
           rawData?.__groupInfo ||
           root?.groupInfo ||
           rawData?.groupInfo ||
+          null;
+
+        // ✅ Tomar __debt si viene del backend
+        const debtInfo =
+          root?.__debt ||
+          rawData?.__debt ||
+          root?.debt ||
+          rawData?.debt ||
           null;
 
         const dataWithPricing = ensurePricingFields(rawData);
@@ -290,8 +298,11 @@ export const ClientsProvider = ({ children }) => {
         if (Array.isArray(familyArr)) {
           enrichedData.__family = familyArr;
         }
+        if (debtInfo) {
+          enrichedData.__debt = debtInfo; // 👈 ACA metemos la deuda en el item
+        }
 
-        // Payload que devolvemos a quien llama (ClienteForm, etc.)
+        // Payload que devolvemos a quien llama (ClienteDetalle, etc.)
         const result = {
           ...root,
           data: enrichedData,
@@ -301,6 +312,9 @@ export const ClientsProvider = ({ children }) => {
         }
         if (groupInfo) {
           result.__groupInfo = groupInfo;
+        }
+        if (debtInfo) {
+          result.__debt = debtInfo;
         }
 
         setCurrentSafe(enrichedData);

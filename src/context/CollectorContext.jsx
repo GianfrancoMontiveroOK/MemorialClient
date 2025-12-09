@@ -26,6 +26,7 @@ export const useCollector = () => {
 };
 
 /* -------------------- helpers de normalización -------------------- */
+/* -------------------- helpers de normalización -------------------- */
 const pickList = (resp) => {
   const root = resp?.data ?? resp ?? {};
   const payload = root?.data && !Array.isArray(root.data) ? root.data : root;
@@ -35,9 +36,11 @@ const pickList = (resp) => {
     ? Number(payload.total)
     : items.length;
 
-  // Sin paginación (full=1): normalizamos a 1/length
-  const page = 1;
-  const pageSize = items.length;
+  // ⬅️ AHORA tomamos page y pageSize del backend si vienen
+  const page = Number.isFinite(payload.page) ? Number(payload.page) : 1;
+  const pageSize = Number.isFinite(payload.pageSize)
+    ? Number(payload.pageSize)
+    : items.length;
 
   const sortBy = payload.sortBy || "createdAt";
   const sortDir = payload.sortDir === "asc" ? "asc" : "desc";
@@ -153,28 +156,54 @@ export const CollectorProvider = ({
   // record último query para refresh
   const lastQueryRef = useRef(null);
 
-  /* -------------------- fetch listado (SIN paginación) -------------------- */
+  /* -------------------- fetch listado (CON paginación server-side) -------------------- */
   const fetchClientsByCollector = useCallback(
     async ({
+      page: pageArg, // backend 1-based
+      limit: limitArg,
       q: query = q,
       sortBy: sb = sortBy,
       sortDir: sd = sortDir,
+      byIdCliente,
+      byDocumento,
     } = {}) => {
       setLoadingSafe(true);
       setErrSafe("");
+
       try {
+        const pageNum = Number.isFinite(pageArg) ? Number(pageArg) : page + 1; // page state es 0-based
+        const limitNum =
+          Number.isFinite(limitArg) && limitArg > 0
+            ? Number(limitArg)
+            : limit > 0
+            ? limit
+            : 25;
+
         const params = {
-          full: 1, // <<<<<< TRAER TODO
-          q: String(query ?? "").trim(),
+          page: pageNum,
+          limit: limitNum,
           sortBy: sb || "createdAt",
           sortDir: sd === "asc" ? "asc" : "desc",
           ...(collectorId != null ? { idCobrador: collectorId } : {}),
         };
 
+        const qTrim = String(query ?? "").trim();
+        if (qTrim) params.q = qTrim;
+        if (Number.isFinite(byIdCliente)) params.byIdCliente = byIdCliente;
+        if (byDocumento) params.byDocumento = String(byDocumento);
+
+        // para refresh
         lastQueryRef.current = params;
 
         const resp = await listCollectorClients(params);
-        const { items: inItems, total: inTotal } = pickList(resp);
+        const {
+          items: inItems,
+          total: inTotal,
+          page: respPage,
+          pageSize: respPageSize,
+          sortBy: respSortBy,
+          sortDir: respSortDir,
+        } = pickList(resp);
 
         const outItems = inItems.map((r, i) => {
           const id =
@@ -184,7 +213,19 @@ export const CollectorProvider = ({
 
         setItemsSafe(outItems);
         setTotalSafe(Number(inTotal) || outItems.length);
-        return { items: outItems, total: Number(inTotal) || outItems.length };
+
+        // actualizamos estado de paginación/orden en el contexto
+        setPage((respPage || 1) - 1); // guardamos 0-based
+        setLimit(respPageSize || limitNum);
+        setSortBy(respSortBy || "createdAt");
+        setSortDir(respSortDir === "asc" ? "asc" : "desc");
+
+        return {
+          items: outItems,
+          total: Number(inTotal) || outItems.length,
+          page: respPage || pageNum,
+          pageSize: respPageSize || limitNum,
+        };
       } catch (e) {
         const msg =
           e?.response?.data?.message || e?.message || "Error al listar";
@@ -196,7 +237,7 @@ export const CollectorProvider = ({
         setLoadingSafe(false);
       }
     },
-    [collectorId, q, sortBy, sortDir]
+    [collectorId, q, sortBy, sortDir, page, limit]
   );
 
   // carga inicial / cada cambio de q, sortBy, sortDir
@@ -498,19 +539,13 @@ export const CollectorProvider = ({
 
   /* -------------------- refresh listado -------------------- */
   const refresh = useCallback(async () => {
-    const p = lastQueryRef.current ?? {
-      full: 1,
-      q,
-      sortBy,
-      sortDir,
-      ...(collectorId != null ? { idCobrador: collectorId } : {}),
-    };
-    return fetchClientsByCollector({
-      q: p.q,
-      sortBy: p.sortBy,
-      sortDir: p.sortDir,
-    });
-  }, [fetchClientsByCollector, q, sortBy, sortDir, collectorId]);
+    const p = lastQueryRef.current;
+    if (!p) {
+      // si nunca se buscó nada, hacemos un load default
+      return fetchClientsByCollector({});
+    }
+    return fetchClientsByCollector(p);
+  }, [fetchClientsByCollector]);
 
   const value = {
     // debug

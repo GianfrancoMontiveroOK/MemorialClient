@@ -15,9 +15,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import PeopleAltIcon from "@mui/icons-material/PeopleAlt";
-import PaymentsIcon from "@mui/icons-material/Payments";
 import DashboardIcon from "@mui/icons-material/Dashboard";
-import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 
 const DRAWER_WIDTH = 240;
 

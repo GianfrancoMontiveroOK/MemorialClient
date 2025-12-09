@@ -1,4 +1,4 @@
-// src/components/CollectorResumenSection.jsx
+ // src/components/CollectorResumenSection.jsx
 import React, { useEffect, useState } from "react";
 import {
   Box,
@@ -29,7 +29,7 @@ const fmtMoney = (n) =>
         currency: "ARS",
         maximumFractionDigits: 0,
       })
-    : "—";
+    : "—"; 
 
 const fmtInt = (n) =>
   typeof n === "number" && Number.isFinite(n) ? Math.round(n) : "—";

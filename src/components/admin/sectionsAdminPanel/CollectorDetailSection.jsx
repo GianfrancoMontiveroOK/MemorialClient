@@ -1,6 +1,19 @@
 // src/components/admin/sectionsAdminPanel/CollectorDetailSection.jsx
 import * as React from "react";
-import { Box, Grid } from "@mui/material";
+import {
+  Box,
+  Grid,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Stack,
+  Typography,
+  Button,
+  Alert,
+  CircularProgress,
+} from "@mui/material";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 
@@ -20,12 +33,14 @@ import {
   getArqueoUsuarioDetalle,
   crearArqueoUsuario,
   listArqueoUsuarioClientes,
-  // ⬇️ import del exportador FULL (CSV desde backend)
   downloadArqueoUsuarioClientesCSV,
+  pagarComisionCobrador,
+  // ⬇️ NUEVO: resumen de comisión (admin)
+  getCollectorCommissionSummaryAdmin,
 } from "../../../api/arqueos";
 
 export default function CollectorDetailSection({
-  user, // { userId, name, email, role }
+  user, // { userId, name, email, role, porcentajeCobrador? }
   defaultDateFrom = "",
   defaultDateTo = "",
   onBack,
@@ -71,12 +86,78 @@ export default function CollectorDetailSection({
   const [cliSortBy, setCliSortBy] = React.useState("createdAt");
   const [cliSortDir, setCliSortDir] = React.useState("desc");
 
-  // feedback
+  // feedback general
   const [toast, setToast] = React.useState({
     open: false,
     msg: "",
     sev: "success",
   });
+
+  // ───────────── Comisiones: estado del modal ─────────────
+  const [commissionDialogOpen, setCommissionDialogOpen] = React.useState(false);
+  const [commissionLoading, setCommissionLoading] = React.useState(false);
+  const [commissionSummaryLoading, setCommissionSummaryLoading] =
+    React.useState(false);
+  const [commissionSummary, setCommissionSummary] = React.useState(null);
+
+  const collectorPercent = React.useMemo(() => {
+    if (user?.porcentajeCobrador != null) {
+      const n = Number(user.porcentajeCobrador);
+      return Number.isFinite(n) ? n : 0;
+    }
+    if (user?.commissionPercent != null) {
+      const n = Number(user.commissionPercent);
+      return Number.isFinite(n) ? n : 0;
+    }
+    return 0;
+  }, [user]);
+
+  // Fallback de sugerencia vieja (debitos * %), por si todavía no hay resumen
+  const suggestedCommissionFallback = React.useMemo(() => {
+    if (!collectorPercent || !Number.isFinite(collectorPercent)) return null;
+    const base = Number(cashTotals.debits || 0);
+    if (!base) return null;
+    return (base * collectorPercent) / 100;
+  }, [collectorPercent, cashTotals.debits]);
+
+  // Derivados del summary
+  const pendingCommission = React.useMemo(() => {
+    if (!commissionSummary) return 0;
+    const raw = commissionSummary?.commissions?.amounts?.pendingCommission ?? 0;
+    return Number(raw) || 0;
+  }, [commissionSummary]);
+
+  const expectedCommission = React.useMemo(() => {
+    if (!commissionSummary) return 0;
+    const raw =
+      commissionSummary?.commissions?.amounts?.expectedCommission ?? 0;
+    return Number(raw) || 0;
+  }, [commissionSummary]);
+
+  const totalCommissionNoPenalty = React.useMemo(() => {
+    if (!commissionSummary) return 0;
+    const raw =
+      commissionSummary?.commissions?.amounts?.totalCommissionNoPenalty ?? 0;
+    return Number(raw) || 0;
+  }, [commissionSummary]);
+
+  const totalCommissionEffective = React.useMemo(() => {
+    if (!commissionSummary) return 0;
+    const raw = commissionSummary?.commissions?.amounts?.totalCommission ?? 0;
+    return Number(raw) || 0;
+  }, [commissionSummary]);
+
+  const alreadyPaidCommission = React.useMemo(() => {
+    if (!commissionSummary) return 0;
+    const raw = commissionSummary?.commissions?.amounts?.alreadyPaid ?? 0;
+    return Number(raw) || 0;
+  }, [commissionSummary]);
+
+  const collectorBalanceFromSummary = React.useMemo(() => {
+    if (!commissionSummary) return null;
+    const raw = commissionSummary?.balance?.collectorBalance ?? null;
+    return raw;
+  }, [commissionSummary]);
 
   const totalCashPages = Math.max(
     1,
@@ -272,7 +353,7 @@ export default function CollectorDetailSection({
     if (tab === "pagos") reloadPayments();
   };
 
-  // Export local SOLO para caja/pagos (mantiene comportamiento anterior)
+  // Export local SOLO para caja/pagos
   const exportLocalCSV = () => {
     const rows =
       tab === "caja"
@@ -315,9 +396,6 @@ export default function CollectorDetailSection({
     URL.revokeObjectURL(url);
   };
 
-  // Botón Export principal del layout:
-  // - caja/pagos => export local
-  // - clientes   => export FULL desde backend
   const onExportTop = () => {
     if (tab === "clientes") return exportAllClientsCSV();
     return exportLocalCSV();
@@ -354,128 +432,363 @@ export default function CollectorDetailSection({
 
   const anyLoading = cashLoading || payLoading || cliLoading;
 
+  // ───────────── Handler pagar comisión ─────────────
+  const handleOpenCommissionDialog = async () => {
+    if (!userIdOk) return;
+    setCommissionSummary(null);
+    setCommissionDialogOpen(true);
+    try {
+      setCommissionSummaryLoading(true);
+      const res = await getCollectorCommissionSummaryAdmin({
+        userId,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+      });
+      const data = res?.data?.data || null;
+      setCommissionSummary(data || null);
+    } catch (e) {
+      console.error(e);
+      setToast({
+        open: true,
+        msg:
+          e?.response?.data?.message ||
+          e?.message ||
+          "No se pudo cargar el resumen de comisión del cobrador.",
+        sev: "error",
+      });
+    } finally {
+      setCommissionSummaryLoading(false);
+    }
+  };
+
+  const handleCloseCommissionDialog = () => {
+    if (commissionLoading || commissionSummaryLoading) return;
+    setCommissionDialogOpen(false);
+  };
+
+  const handleConfirmCommission = async () => {
+    if (!userIdOk) return;
+    const amountNum = Number(pendingCommission);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      setToast({
+        open: true,
+        msg: "No hay comisión pendiente para pagar en este rango.",
+        sev: "warning",
+      });
+      return;
+    }
+
+    try {
+      setCommissionLoading(true);
+      const res = await pagarComisionCobrador({
+        userId,
+        amount: amountNum,
+        note: `Pago automático de comisión (rango ${dateFrom || "inicio"} ${
+          dateTo ? "a " + dateTo : ""
+        })`,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+      });
+
+      if (
+        res?.status === 200 ||
+        res?.status === 201 ||
+        res?.data?.ok === true
+      ) {
+        setToast({
+          open: true,
+          msg: "Comisión pagada correctamente desde CAJA_ADMIN.",
+          sev: "success",
+        });
+        setCommissionDialogOpen(false);
+        await reloadCash();
+      } else {
+        setToast({
+          open: true,
+          msg:
+            res?.data?.message ||
+            "No se pudo registrar el pago de comisión del cobrador.",
+          sev: "error",
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      setToast({
+        open: true,
+        msg:
+          e?.response?.data?.message ||
+          e?.message ||
+          "Error al pagar la comisión del cobrador.",
+        sev: "error",
+      });
+    } finally {
+      setCommissionLoading(false);
+    }
+  };
+
   return (
-    <CollectorDetailLayout
-      user={user}
-      tab={tab}
-      setTab={setTab}
-      anyLoading={anyLoading}
-      onBack={onBack}
-      onRefresh={() => {
-        if (tab === "caja") reloadCash();
-        else if (tab === "pagos") reloadPayments();
-        else reloadClients();
-      }}
-      onExport={onExportTop}
-      onArquearCaja={onArquearCaja}
-      toast={toast}
-      setToast={setToast}
-    >
-      {/* Filtros + KPIs + Tab content */}
-      {tab !== "clientes" && (
-        <Box mb={1.25}>
-          <BoxFilters
-            dateFrom={dateFrom}
-            setDateFrom={setDateFrom}
-            dateTo={dateTo}
-            setDateTo={setDateTo}
-            sideFilter={sideFilter}
-            setSideFilter={setSideFilter}
-            accountCodes={accountCodes}
-            setAccountCodes={setAccountCodes}
-            onApply={applyFilters}
-            disabled={anyLoading}
-          />
-        </Box>
-      )}
+    <>
+      <CollectorDetailLayout
+        user={user}
+        tab={tab}
+        setTab={setTab}
+        anyLoading={anyLoading || commissionLoading || commissionSummaryLoading}
+        onBack={onBack}
+        onRefresh={() => {
+          if (tab === "caja") reloadCash();
+          else if (tab === "pagos") reloadPayments();
+          else reloadClients();
+        }}
+        onExport={onExportTop}
+        onArquearCaja={onArquearCaja}
+        toast={toast}
+        setToast={setToast}
+      >
+        {/* Filtros + KPIs + Tab content */}
+        {tab !== "clientes" && (
+          <Box mb={1.25}>
+            <BoxFilters
+              dateFrom={dateFrom}
+              setDateFrom={setDateFrom}
+              dateTo={dateTo}
+              setDateTo={setDateTo}
+              sideFilter={sideFilter}
+              setSideFilter={setSideFilter}
+              accountCodes={accountCodes}
+              setAccountCodes={setAccountCodes}
+              onApply={applyFilters}
+              disabled={anyLoading}
+            />
+          </Box>
+        )}
 
-      {tab === "caja" && (
-        <>
-          <Grid container spacing={1.25} sx={{ mb: 1 }}>
-            <Grid item xs={12} sm={4}>
-              <Kpi
-                icon={<AccountBalanceWalletRoundedIcon color="primary" />}
-                label="Ingresos"
-                value={fmtMoney(cashTotals.debits)}
-              />
+        {tab === "caja" && (
+          <>
+            {/* Botón para pagar comisión desde CAJA_ADMIN */}
+            <Box
+              mb={1}
+              display="flex"
+              justifyContent="flex-end"
+              alignItems="center"
+              gap={1}
+            >
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleOpenCommissionDialog}
+                disabled={anyLoading || !userIdOk}
+                startIcon={<PaymentsRoundedIcon />}
+              >
+                Pagar comisión
+              </Button>
+            </Box>
+
+            <Grid container spacing={1.25} sx={{ mb: 1 }}>
+              <Grid item xs={12} sm={4}>
+                <Kpi
+                  icon={<AccountBalanceWalletRoundedIcon color="primary" />}
+                  label="Ingresos"
+                  value={fmtMoney(cashTotals.debits)}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Kpi
+                  icon={<AccountBalanceWalletRoundedIcon color="action" />}
+                  label="Egresos"
+                  value={fmtMoney(cashTotals.credits)}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Kpi
+                  icon={<PaymentsRoundedIcon color="success" />}
+                  label="Saldo"
+                  value={fmtMoney(cashTotals.balance)}
+                />
+              </Grid>
             </Grid>
-            <Grid item xs={12} sm={4}>
-              <Kpi
-                icon={<AccountBalanceWalletRoundedIcon color="action" />}
-                label="Egresos"
-                value={fmtMoney(cashTotals.credits)}
-              />
-            </Grid>
-            <Grid item xs={12} sm={4}>
-              <Kpi
-                icon={<PaymentsRoundedIcon color="success" />}
-                label="Saldo"
-                value={fmtMoney(cashTotals.balance)}
-              />
-            </Grid>
-          </Grid>
 
-          <CashTable
-            items={cashItems}
-            total={cashTotal}
-            page={cashPage}
-            setPage={setCashPage}
-            limit={cashLimit}
-            setLimit={setCashLimit}
-            loading={cashLoading}
-            totalPages={totalCashPages}
-            onReload={reloadCash}
-          />
-        </>
-      )}
+            <CashTable
+              items={cashItems}
+              total={cashTotal}
+              page={cashPage}
+              setPage={setCashPage}
+              limit={cashLimit}
+              setLimit={setCashLimit}
+              loading={cashLoading}
+              totalPages={totalCashPages}
+              onReload={reloadCash}
+            />
+          </>
+        )}
 
-      {tab === "pagos" && (
-        <PaymentsTable
-          items={payItems}
-          total={payTotal}
-          page={payPage}
-          setPage={setPayPage}
-          limit={payLimit}
-          setLimit={setPayLimit}
-          loading={payLoading}
-          totalPages={totalPayPages}
-          onReload={reloadPayments}
-        />
-      )}
+        {tab === "pagos" && (
+          <PaymentsTable
+            items={payItems}
+            total={payTotal}
+            page={payPage}
+            setPage={setPayPage}
+            limit={payLimit}
+            setLimit={setPayLimit}
+            loading={payLoading}
+            totalPages={totalPayPages}
+            onReload={reloadPayments}
+          />
+        )}
 
-      {tab === "clientes" && (
-        <>
-          <ClientsFilters
-            q={cliQ}
-            setQ={setCliQ}
-            sortBy={cliSortBy}
-            setSortBy={setCliSortBy}
-            sortDir={cliSortDir}
-            setSortDir={setCliSortDir}
-            onApply={() => {
-              setCliPage(0);
-              reloadClients();
-            }}
-            disabled={cliLoading}
-          />
-          <ClientsTable
-            items={cliItems}
-            total={cliTotal}
-            page={cliPage}
-            setPage={setCliPage}
-            limit={cliLimit}
-            setLimit={setCliLimit}
-            loading={cliLoading}
-            totalPages={totalCliPages}
-            onReload={reloadClients}
-            // ⬇️ ahora el botón Export de la tabla descarga TODO desde backend
-            onExportCSV={exportAllClientsCSV}
-            exportFileName={`clientes_cobrador_${userId}_${new Date()
-              .toISOString()
-              .slice(0, 10)}.csv`}
-          />
-        </>
-      )}
-    </CollectorDetailLayout>
+        {tab === "clientes" && (
+          <>
+            <ClientsFilters
+              q={cliQ}
+              setQ={setCliQ}
+              sortBy={cliSortBy}
+              setSortBy={setCliSortBy}
+              sortDir={cliSortDir}
+              setSortDir={setCliSortDir}
+              onApply={() => {
+                setCliPage(0);
+                reloadClients();
+              }}
+              disabled={cliLoading}
+            />
+            <ClientsTable
+              items={cliItems}
+              total={cliTotal}
+              page={cliPage}
+              setPage={setCliPage}
+              limit={cliLimit}
+              setLimit={setCliLimit}
+              loading={cliLoading}
+              totalPages={totalCliPages}
+              onReload={reloadClients}
+              onExportCSV={exportAllClientsCSV}
+              exportFileName={`clientes_cobrador_${userId}_${new Date()
+                .toISOString()
+                .slice(0, 10)}.csv`}
+            />
+          </>
+        )}
+      </CollectorDetailLayout>
+
+      {/* ───────────── Modal de pago de comisión ───────────── */}
+      <Dialog
+        open={commissionDialogOpen}
+        onClose={handleCloseCommissionDialog}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Pagar comisión al cobrador</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1.5}>
+            <Typography variant="body2">
+              {user?.name ? `Cobrador: ${user.name}` : "Cobrador"}
+              {collectorPercent ? ` · Comisión base: ${collectorPercent}%` : ""}
+            </Typography>
+
+            <Typography variant="body2" color="text.secondary">
+              Saldo en mano (filtro actual):{" "}
+              {fmtMoney(
+                collectorBalanceFromSummary != null
+                  ? collectorBalanceFromSummary
+                  : cashTotals.balance || 0
+              )}
+            </Typography>
+
+            {commissionSummaryLoading && (
+              <Stack direction="row" spacing={1} alignItems="center">
+                <CircularProgress size={18} />
+                <Typography variant="body2">
+                  Calculando comisión del período...
+                </Typography>
+              </Stack>
+            )}
+
+            {!commissionSummaryLoading && commissionSummary && (
+              <>
+                <Alert severity="info" variant="outlined">
+                  <Stack spacing={0.5}>
+                    <Typography variant="body2">
+                      Comisión ideal (si cobrara todo en término):{" "}
+                      <strong>{fmtMoney(expectedCommission)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Comisión por pagos del período (sin castigo):{" "}
+                      <strong>{fmtMoney(totalCommissionNoPenalty)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Comisión efectiva hoy (con penalidad por demora):{" "}
+                      <strong>{fmtMoney(totalCommissionEffective)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Ya pagado como comisión:{" "}
+                      <strong>{fmtMoney(alreadyPaidCommission)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>
+                        Comisión pendiente a pagar ahora:{" "}
+                        {fmtMoney(pendingCommission)}
+                      </strong>
+                    </Typography>
+                  </Stack>
+                </Alert>
+              </>
+            )}
+
+            {!commissionSummaryLoading &&
+              !commissionSummary &&
+              suggestedCommissionFallback != null && (
+                <Alert severity="info" variant="outlined">
+                  No se pudo cargar el resumen detallado. Sugerencia rápida
+                  (ingresos * %):{" "}
+                  <strong>{fmtMoney(suggestedCommissionFallback)}</strong>
+                </Alert>
+              )}
+
+            <TextField
+              label="Nota (opcional)"
+              multiline
+              minRows={2}
+              fullWidth
+              disabled={commissionLoading || commissionSummaryLoading}
+              value={commissionSummary?.commissions?.config?.noteOverride ?? ""}
+              onChange={() => {
+                /* si querés una nota editable, podés agregar estado aparte;
+                   por ahora dejamos fija o vacía para no complicar */
+              }}
+              placeholder="Ej: Comisión mensual cobrador zona centro..."
+              sx={{ display: "none" }} // oculto por ahora (no pedir nada)
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={handleCloseCommissionDialog}
+            disabled={commissionLoading || commissionSummaryLoading}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmCommission}
+            disabled={
+              commissionLoading ||
+              commissionSummaryLoading ||
+              !userIdOk ||
+              pendingCommission <= 0
+            }
+            startIcon={
+              commissionLoading ? (
+                <CircularProgress size={16} />
+              ) : (
+                <PaymentsRoundedIcon />
+              )
+            }
+          >
+            {pendingCommission > 0
+              ? `Pagar ${fmtMoney(pendingCommission)}`
+              : "Sin comisión pendiente"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }

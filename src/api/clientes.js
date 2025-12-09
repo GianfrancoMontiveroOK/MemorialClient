@@ -9,7 +9,6 @@ const toInt = (v, def) => {
 
 const normSortDir = (v) => (String(v).toLowerCase() === "asc" ? "asc" : "desc");
 
-// LISTAR (paginado/orden/búsqueda)
 export const listClientes = (params = {}) => {
   const {
     page = 1,
@@ -31,18 +30,38 @@ export const listClientes = (params = {}) => {
     ...rest,
   };
 
-  return axios.get("/clientes", { params: finalParams, withCredentials: true });
+  return axios.get("/clientes", {
+    params: finalParams,
+    withCredentials: true,
+  });
 };
 
 // STATS (agregados globales para dashboard)
 export const getClientesStats = (params = {}) =>
-  axios.get("/admin/clientes/stats", { params, withCredentials: true });
+  axios.get("/admin/clientes/stats", {
+    params,
+    withCredentials: true,
+  });
 
 // OBTENER UNO
 export function getClienteById(id, opts = {}) {
   const params = {};
-  if (opts.expand) params.expand = opts.expand; // 👉 family, all, etc.
-  return axios.get(`/clientes/${id}`, { params });
+
+  // expand="family", "all", etc.
+  if (opts.expand) params.expand = opts.expand;
+
+  // si en el futuro querés flags extra, los dejamos listos (no rompen nada si el backend los ignora)
+  if (opts.includeDebt != null) {
+    params.includeDebt = opts.includeDebt ? 1 : 0;
+  }
+  if (opts.includeFuture != null) {
+    params.includeFuture = opts.includeFuture ? 1 : 0;
+  }
+
+  return axios.get(`/clientes/${id}`, {
+    params,
+    withCredentials: true,
+  });
 }
 
 // CREAR

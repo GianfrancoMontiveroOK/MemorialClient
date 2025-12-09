@@ -265,7 +265,11 @@ export function extraccionCajaGrande({
     headers: noStoreHeaders,
   });
 }
-// ...
+
+/**
+ * Balance global de cajas (CAJA_CHICA, CAJA_GRANDE, CAJA_SUPERADMIN, etc.)
+ * GET /admin/arqueos/global-cajas-balance
+ */
 export function getGlobalCajasBalance({ dateFrom, dateTo } = {}) {
   const params = {};
   if (dateFrom) params.dateFrom = dateFrom;
@@ -277,7 +281,11 @@ export function getGlobalCajasBalance({ dateFrom, dateTo } = {}) {
     headers: noStoreHeaders,
   });
 }
-// NUEVO: totales GLOBAL(ES) por accountCodes (ej: "CAJA_CHICA" o "CAJA_GRANDE")
+
+/**
+ * Totales globales por accountCodes (ej: "CAJA_CHICA" o "CAJA_GRANDE")
+ * GET /admin/arqueos/global-totals
+ */
 export function getArqueoGlobalTotals({ accountCodes, dateFrom, dateTo } = {}) {
   const params = {};
   if (accountCodes) params.accountCodes = accountCodes;
@@ -289,5 +297,73 @@ export function getArqueoGlobalTotals({ accountCodes, dateFrom, dateTo } = {}) {
     headers: { "Cache-Control": "no-cache" },
   });
 }
+
+/* ========= NUEVO: resumen comisión cobrador (Admin) ========== */
+/**
+ * Resumen de comisiones de un cobrador para un período.
+ *
+ * GET /admin/arqueos/usuarios/comision-resumen
+ *
+ * Params:
+ *  - userId     (opcional, _id Mongo del User cobrador)
+ *  - idCobrador (opcional, numérico; si no viene userId)
+ *  - dateFrom   (YYYY-MM-DD, opcional)
+ *  - dateTo     (YYYY-MM-DD, opcional)
+ *    Si no mandás fechas, el backend usa el mes actual.
+ */
+export function getCollectorCommissionSummaryAdmin({
+  userId,
+  idCobrador,
+  dateFrom,
+  dateTo,
+} = {}) {
+  const params = makeParams({
+    userId,
+    idCobrador:
+      typeof idCobrador !== "undefined" ? String(idCobrador) : undefined,
+    dateFrom,
+    dateTo,
+  });
+
+  return axios.get("/admin/arqueos/usuarios/comision-resumen", {
+    params,
+    withCredentials: true,
+    headers: noStoreHeaders,
+  });
+}
+
 /* ========================= Exports útiles =================== */
 export const __arqueosUtils = { packAccountCodes, makeParams };
+
+/**
+ * Pagar comisión a un cobrador (movimientos de ledger)
+ * POST /admin/arqueos/pagar-comision
+ *
+ * Body:
+ *  - userId   (cobrador)
+ *  - amount   (monto a pagar)
+ *  - note     (opcional)
+ *  - dateFrom/dateTo (opcional, para dejar trazado el período liquidado)
+ */
+export const pagarComisionCobrador = ({
+  userId,
+  amount,
+  note,
+  dateFrom,
+  dateTo,
+}) => {
+  return axios.post(
+    "/admin/arqueos/pagar-comision",
+    {
+      userId,
+      amount,
+      note,
+      dateFrom,
+      dateTo,
+    },
+    {
+      withCredentials: true,
+      headers: { "Cache-Control": "no-cache" },
+    }
+  );
+};
