@@ -5,5 +5,6 @@ export { default as CashTable } from "./CashTable";
 export { default as PaymentsTable } from "./PaymentsTable";
 export { default as ClientsTable } from "./ClientsTable";
 export { default as Kpi } from "./Kpi";
+export { default as CollectorCommissionSection } from "./CollectorCommissionSection";
 
 export * from "./utils";

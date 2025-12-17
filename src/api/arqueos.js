@@ -335,15 +335,18 @@ export function getCollectorCommissionSummaryAdmin({
 /* ========================= Exports útiles =================== */
 export const __arqueosUtils = { packAccountCodes, makeParams };
 
+// src/api/arqueos.js
+
 /**
  * Pagar comisión a un cobrador (movimientos de ledger)
  * POST /admin/arqueos/pagar-comision
  *
  * Body:
- *  - userId   (cobrador)
- *  - amount   (monto a pagar)
- *  - note     (opcional)
- *  - dateFrom/dateTo (opcional, para dejar trazado el período liquidado)
+ *  - userId            (cobrador)
+ *  - amount            (monto a pagar)
+ *  - note              (opcional)
+ *  - dateFrom/dateTo   (opcional, para dejar trazado el período liquidado)
+ *  - sourceAccountCode (opcional: "CAJA_CHICA" | "CAJA_ADMIN", etc.)
  */
 export const pagarComisionCobrador = ({
   userId,
@@ -351,6 +354,7 @@ export const pagarComisionCobrador = ({
   note,
   dateFrom,
   dateTo,
+  sourceAccountCode,
 }) => {
   return axios.post(
     "/admin/arqueos/pagar-comision",
@@ -360,6 +364,7 @@ export const pagarComisionCobrador = ({
       note,
       dateFrom,
       dateTo,
+      sourceAccountCode,
     },
     {
       withCredentials: true,

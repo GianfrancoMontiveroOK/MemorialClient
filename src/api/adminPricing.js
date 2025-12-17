@@ -23,6 +23,14 @@ export function repriceAll(body = {}) {
 }
 
 /**
+ * GET /api/admin/reprice-progress
+ * Devuelve progreso global del último proceso (all/byIds/percent, etc).
+ */
+export function getRepriceProgress() {
+  return axios.get("/admin/reprice-progress", { withCredentials: true });
+}
+
+/**
  * POST /api/admin/reprice-by-ids
  * Body: { ids: Array<string|number>, concurrency?: number, logEvery?: number }
  */
@@ -33,6 +41,38 @@ export function repriceByIds(ids = [], opts = {}) {
   return axios.post(
     "/admin/reprice-by-ids",
     { ids, ...opts },
+    { withCredentials: true }
+  );
+}
+
+/**
+ * POST /api/admin/increase-percent
+ * Body:
+ * {
+ *   percent: number,
+ *   applyToIdeal: boolean,
+ *   applyToHistorical: boolean
+ * }
+ */
+export function increasePercent({
+  percent,
+  applyToIdeal = true,
+  applyToHistorical = false,
+} = {}) {
+  const p = Number(percent);
+  if (!Number.isFinite(p) || p === 0) {
+    throw new Error("percent debe ser un número distinto de cero");
+  }
+  if (!applyToIdeal && !applyToHistorical) {
+    throw new Error("Debe seleccionar al menos un tipo de precio a actualizar");
+  }
+  return axios.post(
+    "/admin/increase-percent",
+    {
+      percent: p,
+      applyToIdeal: !!applyToIdeal,
+      applyToHistorical: !!applyToHistorical,
+    },
     { withCredentials: true }
   );
 }

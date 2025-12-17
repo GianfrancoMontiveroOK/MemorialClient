@@ -15,6 +15,9 @@ import {
   Snackbar,
   Alert,
   LinearProgress,
+  Checkbox,
+  FormControlLabel,
+  FormGroup,
 } from "@mui/material";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
@@ -28,7 +31,11 @@ import SaveIcon from "@mui/icons-material/Save";
 import ReplayIcon from "@mui/icons-material/Replay";
 import BoltIcon from "@mui/icons-material/Bolt";
 import { useSettings } from "../../../context/SettingsContext";
-import { repriceAll } from "../../../api/adminPricing";
+import {
+  repriceAll,
+  getRepriceProgress,
+  increasePercent as increasePercentApi,
+} from "../../../api/adminPricing";
 
 /* ===================== Defaults y helpers ===================== */
 const DEFAULT_RULES = {
@@ -58,9 +65,7 @@ const normalizeRules = (r) => {
       minMap: r?.group?.minMap || DEFAULT_RULES.group.minMap,
     },
     age:
-      Array.isArray(r?.age) && r.age.length
-        ? [...r.age]
-        : [...DEFAULT_RULES.age],
+      Array.isArray(r?.age) && r.age.length ? [...r.age] : [...DEFAULT_RULES.age],
   };
   clean.age.sort((a, b) => b.min - a.min);
   clean.age = clean.age.map((t) => ({
@@ -70,8 +75,8 @@ const normalizeRules = (r) => {
   return clean;
 };
 
-// igualdad “estable” para dirty checking
-const stableStr = (obj) => JSON.stringify(obj, Object.keys(obj).sort());
+// igualdad “estable” para dirty checking (simple)
+const stableStr = (obj) => JSON.stringify(obj);
 
 /* =============== Mini engine (preview local) =============== */
 const roundPolicy500 = (x) => {
@@ -115,6 +120,14 @@ const money = new Intl.NumberFormat("es-AR", {
   maximumFractionDigits: 0,
 });
 
+function fmtEta(etaSec) {
+  const s = Number(etaSec);
+  if (!Number.isFinite(s) || s <= 0) return "—";
+  if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  if (s >= 60) return `${Math.floor(s / 60)}m ${Math.floor(s % 60)}s`;
+  return `${Math.floor(s)}s`;
+}
+
 /* ===================== Componente ===================== */
 export default function SettingsSection() {
   const {
@@ -123,7 +136,7 @@ export default function SettingsSection() {
     err,
     reload,
     save,
-    hasRemote, // si tu contexto no lo expone, podés quitar estas tres líneas de UI
+    hasRemote, // si tu contexto no lo expone, podés quitar estas líneas de UI
     lastLoadedAt,
     lastSavedAt,
   } = useSettings();
@@ -148,30 +161,84 @@ export default function SettingsSection() {
     cremaciones: 0,
   });
 
-  // ---- Operaciones masivas (reprice-all) ----
+  // ---- Operaciones masivas ----
   const [bulkRunning, setBulkRunning] = React.useState(false);
   const [bulkMsg, setBulkMsg] = React.useState("");
+
+  // ---- Aumento porcentual (inline) ----
+  const [pctRunning, setPctRunning] = React.useState(false);
+  const [pctForm, setPctForm] = React.useState({
+    percent: 10,
+    applyToIdeal: true,
+    applyToHistorical: false,
+  });
+
+  // ---- Progreso global (polling) ----
+  const [progress, setProgress] = React.useState(null);
+  const [progressErr, setProgressErr] = React.useState("");
+
+  const fetchProgress = React.useCallback(async () => {
+    try {
+      setProgressErr("");
+      const { data } = await getRepriceProgress();
+      setProgress(data);
+      return data;
+    } catch (e) {
+      const m =
+        e?.response?.data?.message ||
+        e?.message ||
+        "No se pudo obtener el progreso";
+      setProgressErr(m);
+      return null;
+    }
+  }, []);
+
+  // poll cuando hay procesos corriendo (o si el backend marca running)
+  React.useEffect(() => {
+    let alive = true;
+    let id = null;
+
+    const shouldPoll = () =>
+      bulkRunning || pctRunning || (!!progress && progress?.running);
+
+    async function tick() {
+      if (!alive) return;
+      await fetchProgress();
+    }
+
+    if (shouldPoll()) {
+      tick();
+      id = setInterval(tick, 700);
+    }
+
+    return () => {
+      alive = false;
+      if (id) clearInterval(id);
+    };
+  }, [bulkRunning, pctRunning, progress?.running, fetchProgress]);
 
   const handleRepriceAll = async () => {
     try {
       setBulkRunning(true);
       setBulkMsg("Iniciando reproceso de precios para todos los grupos…");
+      fetchProgress(); // dispara snapshot temprano
+
       const { data } = await repriceAll();
-      // data esperado (según backend): { ok, total, procesados, matchedTotal, modifiedTotal, errores }
       const summary = [
         `Total grupos: ${data?.total ?? "—"}`,
         `Procesados: ${data?.procesados ?? "—"}`,
         `Actualizados: ${data?.modifiedTotal ?? "—"}`,
         `Errores: ${data?.errores ?? 0}`,
       ].join(" · ");
+
       setBulkMsg(`Finalizado. ${summary}`);
       setSnack({
         open: true,
         type: data?.ok === false ? "warning" : "success",
         msg: `Reprice global: ${summary}`,
       });
-      // Si querés, recargar reglas (no es estrictamente necesario)
-      // await reload();
+
+      fetchProgress();
     } catch (e) {
       const m =
         e?.response?.data?.message ||
@@ -181,6 +248,51 @@ export default function SettingsSection() {
       setSnack({ open: true, type: "error", msg: m });
     } finally {
       setBulkRunning(false);
+    }
+  };
+
+  const handleIncreasePercent = async () => {
+    try {
+      const p = Number(pctForm.percent);
+      if (!Number.isFinite(p) || p === 0) throw new Error("percent inválido");
+      if (!pctForm.applyToIdeal && !pctForm.applyToHistorical) {
+        throw new Error("Seleccioná al menos un tipo de precio");
+      }
+
+      setPctRunning(true);
+      setBulkMsg(`Aplicando aumento del ${p}%…`);
+      fetchProgress(); // snapshot temprano
+
+      const { data } = await increasePercentApi({
+        percent: p,
+        applyToIdeal: !!pctForm.applyToIdeal,
+        applyToHistorical: !!pctForm.applyToHistorical,
+      });
+
+      const summary = [
+        `Grupos: ${data?.totalGrupos ?? data?.total ?? "—"}`,
+        `Procesados: ${data?.procesados ?? "—"}`,
+        `Ideal mod: ${data?.modifiedIdeal ?? "—"}`,
+        `Hist mod: ${data?.modifiedHistorical ?? "—"}`,
+        `Errores: ${data?.errores ?? 0}`,
+      ].join(" · ");
+
+      setBulkMsg(`Finalizado. ${summary}`);
+      setSnack({
+        open: true,
+        type: data?.ok === false ? "warning" : "success",
+        msg: `Aumento porcentual: ${summary}`,
+      });
+
+      fetchProgress();
+    } catch (e) {
+      const m =
+        e?.response?.data?.message ||
+        e?.message ||
+        "No se pudo aplicar el aumento porcentual";
+      setSnack({ open: true, type: "error", msg: m });
+    } finally {
+      setPctRunning(false);
     }
   };
 
@@ -209,10 +321,7 @@ export default function SettingsSection() {
   const addTier = () => {
     const maxMin = Math.max(0, ...rules.age.map((t) => t.min));
     const newTier = { min: maxMin + 1, coef: 1.0 };
-    handleChange(
-      "age",
-      [newTier, ...rules.age].sort((a, b) => b.min - a.min)
-    );
+    handleChange("age", [newTier, ...rules.age].sort((a, b) => b.min - a.min));
   };
 
   const removeTier = (idx) => {
@@ -246,15 +355,9 @@ export default function SettingsSection() {
       const payload = {
         priceRules: {
           base: toNumber(rules.base, DEFAULT_RULES.base),
-          cremationCoef: toNumber(
-            rules.cremationCoef,
-            DEFAULT_RULES.cremationCoef
-          ),
+          cremationCoef: toNumber(rules.cremationCoef, DEFAULT_RULES.cremationCoef),
           group: {
-            neutralAt: toNumber(
-              rules.group.neutralAt,
-              DEFAULT_RULES.group.neutralAt
-            ),
+            neutralAt: toNumber(rules.group.neutralAt, DEFAULT_RULES.group.neutralAt),
             step: toNumber(rules.group.step, DEFAULT_RULES.group.step),
             minMap: parsedMinMap,
           },
@@ -290,22 +393,28 @@ export default function SettingsSection() {
 
   // validación minMap JSON
   let minMapValid = true;
+  let minMapParsed = {};
   try {
     const obj = JSON.parse(minMapText || "{}");
     minMapValid = obj && typeof obj === "object" && !Array.isArray(obj);
+    minMapParsed = minMapValid ? obj : {};
   } catch {
     minMapValid = false;
+    minMapParsed = {};
   }
 
-  // dirty checking
+  // dirty checking (no revienta si minMap inválido)
   const canonical = normalizeRules(priceRules || DEFAULT_RULES);
-  const isDirty =
-    stableStr({
-      ...rules,
-      group: { ...rules.group, minMap: JSON.parse(minMapText || "{}") },
-    }) !== stableStr(canonical);
+  const isDirty = (() => {
+    if (!minMapValid) return true;
+    const current = { ...rules, group: { ...rules.group, minMap: minMapParsed } };
+    const canon = { ...canonical, group: { ...canonical.group, minMap: canonical.group.minMap } };
+    return stableStr(current) !== stableStr(canon);
+  })();
 
-  const previewValue = computePreview(rules, preview);
+  const progressPct = Math.max(0, Math.min(100, Number(progress?.percent ?? 0)));
+  const showProgress =
+    (progress && Number(progress?.total) > 0) || bulkRunning || pctRunning;
 
   return (
     <Box>
@@ -319,7 +428,7 @@ export default function SettingsSection() {
         flexWrap="wrap"
       >
         <Stack direction="row" spacing={1} alignItems="center">
-          <Typography variant="h4" fontWeight={700} textTransform= "uppercase">
+          <Typography variant="h4" fontWeight={700} textTransform="uppercase">
             Controles de precios
           </Typography>
           {cameFromBackend ? (
@@ -327,7 +436,8 @@ export default function SettingsSection() {
               icon={<CheckCircleIcon />}
               label="Backend OK"
               color="success"
-              variant="confirm"
+              size="small"
+              variant="outlined"
             />
           ) : (
             <Chip
@@ -368,28 +478,13 @@ export default function SettingsSection() {
       </Box>
 
       {/* Metadatos de sincronización */}
-      <Stack direction="row" spacing={2} sx={{ mb: 2 }} alignItems="center">
-        <Chip
-          icon={<UpdateIcon />}
-          size="small"
-          variant="outlined"
-          label={`Última carga: ${lastLoad}`}
-        />
-        <Chip
-          icon={<SaveIcon />}
-          size="small"
-          variant="outlined"
-          label={`Último guardado: ${lastSave}`}
-        />
+      <Stack direction="row" spacing={2} sx={{ mb: 2 }} alignItems="center" flexWrap="wrap">
+        <Chip icon={<UpdateIcon />} size="small" variant="outlined" label={`Última carga: ${lastLoad}`} />
+        <Chip icon={<SaveIcon />} size="small" variant="outlined" label={`Último guardado: ${lastSave}`} />
       </Stack>
 
       {loading ? (
-        <Box
-          display="flex"
-          justifyContent="center"
-          alignItems="center"
-          minHeight="20vh"
-        >
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="20vh">
           <CircularProgress />
         </Box>
       ) : (
@@ -403,9 +498,7 @@ export default function SettingsSection() {
                   type="number"
                   fullWidth
                   value={rules.base}
-                  onChange={(e) =>
-                    handleChange("base", toNumber(e.target.value, rules.base))
-                  }
+                  onChange={(e) => handleChange("base", toNumber(e.target.value, rules.base))}
                 />
               </Grid>
               <Grid item xs={12} md={6}>
@@ -416,19 +509,13 @@ export default function SettingsSection() {
                   inputProps={{ step: "0.001" }}
                   value={rules.cremationCoef}
                   onChange={(e) =>
-                    handleChange(
-                      "cremationCoef",
-                      toNumber(e.target.value, rules.cremationCoef)
-                    )
+                    handleChange("cremationCoef", toNumber(e.target.value, rules.cremationCoef))
                   }
                 />
               </Grid>
 
               <Grid item xs={12}>
-                <Paper
-                  variant="outlined"
-                  sx={{ p: 2, borderRadius: 2, borderColor: "divider" }}
-                >
+                <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, borderColor: "divider" }}>
                   <Typography variant="subtitle2" gutterBottom>
                     Grupo familiar
                   </Typography>
@@ -440,10 +527,7 @@ export default function SettingsSection() {
                         fullWidth
                         value={rules.group.neutralAt}
                         onChange={(e) =>
-                          handleChange(
-                            "group.neutralAt",
-                            toNumber(e.target.value, rules.group.neutralAt)
-                          )
+                          handleChange("group.neutralAt", toNumber(e.target.value, rules.group.neutralAt))
                         }
                       />
                     </Grid>
@@ -455,26 +539,19 @@ export default function SettingsSection() {
                         inputProps={{ step: "0.01" }}
                         value={rules.group.step}
                         onChange={(e) =>
-                          handleChange(
-                            "group.step",
-                            toNumber(e.target.value, rules.group.step)
-                          )
+                          handleChange("group.step", toNumber(e.target.value, rules.group.step))
                         }
                       />
                     </Grid>
                     <Grid item xs={12} md={4}>
                       <TextField
-                        label={`minMap (JSON) ${
-                          minMapValid ? "" : " — inválido"
-                        }`}
+                        label={`minMap (JSON) ${minMapValid ? "" : " — inválido"}`}
                         fullWidth
                         multiline
                         minRows={4}
                         error={!minMapValid}
                         helperText={
-                          !minMapValid
-                            ? "Debe ser un objeto JSON válido"
-                            : "Mapeo específico por tamaño de grupo (opcional)"
+                          !minMapValid ? "Debe ser un objeto JSON válido" : "Mapeo específico por tamaño de grupo (opcional)"
                         }
                         value={minMapText}
                         onChange={(e) => setMinMapText(e.target.value)}
@@ -485,24 +562,10 @@ export default function SettingsSection() {
               </Grid>
 
               <Grid item xs={12}>
-                <Paper
-                  variant="outlined"
-                  sx={{ p: 2, borderRadius: 2, borderColor: "divider" }}
-                >
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      mb: 1,
-                    }}
-                  >
+                <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, borderColor: "divider" }}>
+                  <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
                     <Typography variant="subtitle2">Tiers por edad</Typography>
-                    <Button
-                      size="small"
-                      startIcon={<AddCircleOutlineIcon />}
-                      onClick={addTier}
-                    >
+                    <Button size="small" startIcon={<AddCircleOutlineIcon />} onClick={addTier}>
                       Agregar tier
                     </Button>
                   </Box>
@@ -524,14 +587,8 @@ export default function SettingsSection() {
                             value={t.min}
                             onChange={(e) => {
                               const arr = [...rules.age];
-                              arr[idx] = {
-                                ...arr[idx],
-                                min: toNumber(e.target.value, t.min),
-                              };
-                              handleChange(
-                                "age",
-                                arr.sort((a, b) => b.min - a.min)
-                              );
+                              arr[idx] = { ...arr[idx], min: toNumber(e.target.value, t.min) };
+                              handleChange("age", arr.sort((a, b) => b.min - a.min));
                             }}
                           />
                         </Grid>
@@ -544,27 +601,15 @@ export default function SettingsSection() {
                             value={t.coef}
                             onChange={(e) => {
                               const arr = [...rules.age];
-                              arr[idx] = {
-                                ...arr[idx],
-                                coef: toNumber(e.target.value, t.coef),
-                              };
+                              arr[idx] = { ...arr[idx], coef: toNumber(e.target.value, t.coef) };
                               handleChange("age", arr);
                             }}
                           />
                         </Grid>
-                        <Grid
-                          item
-                          xs={12}
-                          sm={2}
-                          sx={{ display: "flex", alignItems: "center" }}
-                        >
+                        <Grid item xs={12} sm={2} sx={{ display: "flex", alignItems: "center" }}>
                           <Tooltip title="Eliminar">
                             <span>
-                              <IconButton
-                                color="error"
-                                onClick={() => removeTier(idx)}
-                                disabled={rules.age.length <= 1}
-                              >
+                              <IconButton color="error" onClick={() => removeTier(idx)} disabled={rules.age.length <= 1}>
                                 <DeleteOutlineIcon />
                               </IconButton>
                             </span>
@@ -586,22 +631,12 @@ export default function SettingsSection() {
             </Grid>
           </Grid>
 
-          {/* Columna derecha: Preview / Estado / Operaciones masivas */}
+          {/* Columna derecha */}
           <Grid item xs={12} md={5}>
-            <Paper
-              variant="outlined"
-              sx={{ p: 2, borderRadius: 2, borderColor: "divider" }}
-            >
-              <Stack
-                direction="row"
-                spacing={1}
-                alignItems="center"
-                sx={{ mb: 1 }}
-              >
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, borderColor: "divider" }}>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                 <CalculateIcon fontSize="small" />
-                <Typography variant="subtitle2">
-                  Preview (ejemplo rápido)
-                </Typography>
+                <Typography variant="subtitle2">Preview (ejemplo rápido)</Typography>
               </Stack>
 
               <Grid container spacing={2}>
@@ -612,10 +647,7 @@ export default function SettingsSection() {
                     fullWidth
                     value={preview.integrantes}
                     onChange={(e) =>
-                      setPreview((p) => ({
-                        ...p,
-                        integrantes: toNumber(e.target.value, p.integrantes),
-                      }))
+                      setPreview((p) => ({ ...p, integrantes: toNumber(e.target.value, p.integrantes) }))
                     }
                   />
                 </Grid>
@@ -625,12 +657,7 @@ export default function SettingsSection() {
                     type="number"
                     fullWidth
                     value={preview.edadMax}
-                    onChange={(e) =>
-                      setPreview((p) => ({
-                        ...p,
-                        edadMax: toNumber(e.target.value, p.edadMax),
-                      }))
-                    }
+                    onChange={(e) => setPreview((p) => ({ ...p, edadMax: toNumber(e.target.value, p.edadMax) }))}
                   />
                 </Grid>
                 <Grid item xs={4}>
@@ -640,10 +667,7 @@ export default function SettingsSection() {
                     fullWidth
                     value={preview.cremaciones}
                     onChange={(e) =>
-                      setPreview((p) => ({
-                        ...p,
-                        cremaciones: toNumber(e.target.value, p.cremaciones),
-                      }))
+                      setPreview((p) => ({ ...p, cremaciones: toNumber(e.target.value, p.cremaciones) }))
                     }
                   />
                 </Grid>
@@ -670,99 +694,165 @@ export default function SettingsSection() {
               </Grid>
             </Paper>
 
+            {/* Progreso global */}
             <Paper
               variant="outlined"
               sx={{ p: 2, borderRadius: 2, borderColor: "divider", mt: 2 }}
             >
-              <Stack
-                direction="row"
-                spacing={1}
-                alignItems="center"
-                sx={{ mb: 1 }}
-              >
-                <RuleIcon fontSize="small" />
-                <Typography variant="subtitle2">Origen / Estado</Typography>
-              </Stack>
-              <Stack direction="row" spacing={1} flexWrap="wrap">
-                {cameFromBackend ? (
-                  <Chip
-                    color="success"
-                    variant="confirm"
-                    label="Cargado desde backend"
-                  />
-                ) : (
-                  <Chip
-                    color="warning"
-                    variant="outlined"
-                    label="Defaults locales"
-                  />
-                )}
-                {isDirty ? (
-                  <Chip
-                    color="info"
-                    label="Hay cambios pendientes"
-                  />
-                ) : (
-                  <Chip variant="outlined" label="Sin cambios" />
-                )}
-                <Chip
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1, justifyContent: "space-between" }}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <BoltIcon fontSize="small" />
+                  <Typography variant="subtitle2">Progreso (backend)</Typography>
+                </Stack>
 
-                  variant="outlined"
-                  label={`Última carga: ${lastLoad}`}
-                />
-                <Chip
-                  variant="outlined"
-                  label={`Último guardado: ${lastSave}`}
-                />
+                <Tooltip title="Refrescar progreso">
+                  <span>
+                    <IconButton size="small" onClick={fetchProgress} disabled={bulkRunning || pctRunning}>
+                      <ReplayIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
               </Stack>
+
+              {progressErr ? (
+                <Alert severity="warning" variant="outlined" sx={{ mb: 1 }}>
+                  {progressErr}
+                </Alert>
+              ) : null}
+
+              {showProgress ? (
+                <>
+                  <Box sx={{ mb: 1 }}>
+                    <LinearProgress
+                      variant="determinate"
+                      value={progressPct}
+                      sx={{ height: 10, borderRadius: 999 }}
+                    />
+                  </Box>
+
+                  <Stack direction="row" spacing={1} flexWrap="wrap">
+                    <Chip size="small" variant="outlined" label={`Modo: ${progress?.mode ?? "—"}`} />
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={`Procesados: ${progress?.procesados ?? 0}/${progress?.total ?? 0}`}
+                    />
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={`Modificados: ${progress?.modifiedTotal ?? 0}`}
+                    />
+                    <Chip size="small" variant="outlined" label={`Errores: ${progress?.errores ?? 0}`} />
+                    <Chip size="small" variant="outlined" label={`ETA: ${fmtEta(progress?.etaSec)}`} />
+                    {progress?.finished ? (
+                      <Chip size="small" color="success" label="Finalizado" />
+                    ) : progress?.running ? (
+                      <Chip size="small" color="info" label="Corriendo" />
+                    ) : (
+                      <Chip size="small" variant="outlined" label="Idle" />
+                    )}
+                  </Stack>
+                </>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  Sin procesos recientes.
+                </Typography>
+              )}
             </Paper>
 
-            {/* === Operaciones masivas === */}
+            {/* Operaciones masivas + aumento porcentual (SIN MODAL) */}
             <Paper
               variant="outlined"
               sx={{ p: 2, borderRadius: 2, borderColor: "divider", mt: 2 }}
             >
-              <Stack
-                direction="row"
-                spacing={1}
-                alignItems="center"
-                sx={{ mb: 1 }}
-              >
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                 <BoltIcon fontSize="small" />
                 <Typography variant="subtitle2">Operaciones masivas</Typography>
               </Stack>
 
-              <Tooltip title="Recalcular 'cuotaIdeal' para TODOS los grupos. Tarea pesada; requiere permisos.">
-                <span>
-                  <Button
-                    variant="brandYellow"
-                    startIcon={
-                      bulkRunning ? (
-                        <CircularProgress size={16} />
-                      ) : (
-                        <BoltIcon />
-                      )
-                    }
-                    onClick={handleRepriceAll}
-                    disabled={bulkRunning || saving || loading}
-                  >
-                    {bulkRunning ? "Reprocesando…" : "Repreciar todos"}
-                  </Button>
-                </span>
-              </Tooltip>
+              <Stack spacing={1.5}>
+                <Tooltip title="Recalcular 'cuotaIdeal' para TODOS los grupos. Tarea pesada; requiere permisos.">
+                  <span>
+                    <Button
+                      variant="brandYellow"
+                      startIcon={bulkRunning ? <CircularProgress size={16} /> : <BoltIcon />}
+                      onClick={handleRepriceAll}
+                      disabled={bulkRunning || pctRunning || saving || loading}
+                    >
+                      {bulkRunning ? "Reprocesando…" : "Repreciar todos"}
+                    </Button>
+                  </span>
+                </Tooltip>
 
-              {bulkRunning && (
-                <Box sx={{ mt: 2 }}>
-                  <LinearProgress />
-                </Box>
-              )}
-              <Typography
-                variant="caption"
-                sx={{ display: "block", mt: 1 }}
-                color="text.secondary"
-              >
-                {bulkMsg}
-              </Typography>
+                <Divider />
+
+                <Typography variant="subtitle2">Aumento porcentual</Typography>
+
+                <Grid container spacing={1.5}>
+                  <Grid item xs={12} sm={4}>
+                    <TextField
+                      label="%"
+                      type="number"
+                      fullWidth
+                      inputProps={{ step: "0.1" }}
+                      value={pctForm.percent}
+                      onChange={(e) =>
+                        setPctForm((p) => ({ ...p, percent: toNumber(e.target.value, p.percent) }))
+                      }
+                    />
+                  </Grid>
+
+                  <Grid item xs={12} sm={8}>
+                    <FormGroup row>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={!!pctForm.applyToIdeal}
+                            onChange={(e) =>
+                              setPctForm((p) => ({ ...p, applyToIdeal: e.target.checked }))
+                            }
+                          />
+                        }
+                        label="Aplicar a cuotaIdeal"
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={!!pctForm.applyToHistorical}
+                            onChange={(e) =>
+                              setPctForm((p) => ({ ...p, applyToHistorical: e.target.checked }))
+                            }
+                          />
+                        }
+                        label="Aplicar a cuota (histórica)"
+                      />
+                    </FormGroup>
+                  </Grid>
+
+                  <Grid item xs={12}>
+                    <Tooltip title="Aplica el aumento porcentual sobre los grupos. Se puede seguir el progreso arriba.">
+                      <span>
+                        <Button
+                          variant="confirm"
+                          startIcon={pctRunning ? <CircularProgress size={16} /> : <BoltIcon />}
+                          onClick={handleIncreasePercent}
+                          disabled={pctRunning || bulkRunning || saving || loading}
+                        >
+                          {pctRunning ? "Aplicando…" : "Aplicar aumento"}
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  </Grid>
+                </Grid>
+
+                <Typography
+                  variant="caption"
+                  sx={{ display: "block" }}
+                  color="text.secondary"
+                >
+                  {bulkMsg}
+                </Typography>
+              </Stack>
             </Paper>
           </Grid>
 
@@ -800,7 +890,7 @@ export default function SettingsSection() {
               </Button>
             </Box>
           </Grid>
-        </Grid> 
+        </Grid>
       )}
 
       {/* Snackbar */}
