@@ -413,7 +413,7 @@ export default function ClientsTableMemorial() {
         </Tooltip>
 
         <Button
-          variant="contained"
+          variant="brandYellow"
           startIcon={<AddIcon />}
           onClick={() => navigate("/app/clientes/nuevo")}
         >

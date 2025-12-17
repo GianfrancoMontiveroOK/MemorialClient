@@ -177,7 +177,7 @@ export default function ApplyPaymentDialog({
         >
           <Tab
             value="auto"
-            label="Automático (FIFO)"
+            label="Automático (TODO)"
             sx={{
               textTransform: "none",
               fontSize: 13,
@@ -247,7 +247,7 @@ export default function ApplyPaymentDialog({
               <Typography variant="body2" color="warning.main">
                 Tiene {monthsDue} períodos de atraso. Según la regla interna,
                 debés cobrar al menos {minPeriodsToCharge} períodos en este pago
-                (o cancelar todo con FIFO).
+                (o cancelar todo con Automático).
               </Typography>
             )}
 

@@ -56,8 +56,8 @@ const fmtDateTime = (d) => {
 
 const SIDES = [
   { value: "", label: "Todos" },
-  { value: "debit", label: "Débito" },
-  { value: "credit", label: "Crédito" },
+  { value: "debit", label: "DEBE" },
+  { value: "credit", label: "HABER" },
 ];
 
 const SORTABLE = [
@@ -506,9 +506,9 @@ export default function AuditSection() {
           {Object.entries(stats).map(([cur, s]) => (
             <Chip
               key={cur}
-              label={`${cur} • Débito ${fmtAmount(
+              label={`${cur} • DEBE ${fmtAmount(
                 s.debit
-              )} | Crédito ${fmtAmount(s.credit)} | Neto ${fmtAmount(s.net)} (${
+              )} | HABER ${fmtAmount(s.credit)} | Neto ${fmtAmount(s.net)} (${
                 s.lines
               } líneas)`}
               variant="outlined"
@@ -662,14 +662,14 @@ export default function AuditSection() {
                       <TableCell>
                         {row.side === "debit" ? (
                           <Chip
-                            label="Débito"
+                            label="DE"
                             size="small"
                             color="success"
                             variant="outlined"
                           />
                         ) : (
                           <Chip
-                            label="Crédito"
+                            label="HABER"
                             size="small"
                             color="info"
                             variant="outlined"

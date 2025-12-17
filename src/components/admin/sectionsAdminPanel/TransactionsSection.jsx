@@ -325,7 +325,7 @@ export default function TransactionsSection() {
             ))}
           </TextField>
           <Button
-            variant="contained"
+            variant="brandYellow"
             onClick={handleApplyFilters}
             disabled={loading || importing}
           >

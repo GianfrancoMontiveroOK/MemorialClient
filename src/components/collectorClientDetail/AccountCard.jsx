@@ -386,7 +386,7 @@ export default function AccountCard({
         </Stack>
 
         <Button
-          variant="contained"
+          variant="brandYellow"
           size="small"
           startIcon={<TuneIcon />}
           onClick={onOpenApply}

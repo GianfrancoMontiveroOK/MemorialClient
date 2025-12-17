@@ -207,7 +207,7 @@ function AdminDebtAccountCard({ groupedDebt, hasDebt }) {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Esta vista resume, por período, cuánto se cargó, cuánto se pagó y el
-            saldo restante, igual que ve el cobrador en su AccountCard.
+            saldo restante, igual que ve el cobrador en su detalle de cliente.
           </Typography>
         </Box>
 
@@ -455,7 +455,7 @@ function AdminApplyPaymentDialog({
         >
           <Tab
             value="auto"
-            label="Automático (FIFO)"
+            label="Automático (TODO)"
             sx={{
               textTransform: "none",
               fontSize: 13,
@@ -486,8 +486,8 @@ function AdminApplyPaymentDialog({
         {tab === "auto" ? (
           <Stack spacing={1.5}>
             <Typography variant="body2" color="text.primary">
-              El sistema aplica el pago empezando por la deuda más antigua
-              (FIFO). En oficina, esto normalmente significa cancelar todos los
+              El sistema aplica el pago empezando por la deuda más antigua.
+              En oficina, esto normalmente significa cancelar todos los
               períodos con saldo.
             </Typography>
 
@@ -526,7 +526,7 @@ function AdminApplyPaymentDialog({
               <Typography variant="body2" color="warning.main">
                 Tiene {monthsDue} períodos de atraso. Según la regla interna, en
                 oficina se deben cobrar al menos {minPeriodsToCharge} períodos
-                en este caso (o todos con FIFO).
+                en este caso (o todos con "Automático").
               </Typography>
             )}
 
@@ -837,7 +837,7 @@ export default function AdminPaymentsView({
         monthsDue,
         minPeriodsToCharge: 2,
         message:
-          "Tiene 3 períodos de atraso. Desde oficina se debe cobrar al menos 2 períodos (o todos con FIFO).",
+          "Tiene 3 períodos de atraso. Desde oficina se debe cobrar al menos 2 períodos (o todos con Automático).",
       };
     }
 
@@ -944,7 +944,7 @@ export default function AdminPaymentsView({
                 <Chip
                   label={periodStatusLabel}
                   color={lastPeriod ? "success" : "default"}
-                  size="small"
+                  size="large"
                 />
 
                 {/* Estado global de deuda si viene del backend */}
@@ -952,7 +952,7 @@ export default function AdminPaymentsView({
                   <Chip
                     label={debtUi.label}
                     color={debtUi.color}
-                    size="small"
+                    size="large"
                     variant={debtUi.variant}
                   />
                 )}
@@ -964,7 +964,7 @@ export default function AdminPaymentsView({
                     label={`Último pago: ${formatDateTime(
                       lastPayment.postedAt || lastPayment.createdAt
                     )}`}
-                    size="small"
+                    size="large"
                     variant="outlined"
                   />
                 )}
@@ -1002,8 +1002,8 @@ export default function AdminPaymentsView({
               <Tooltip title={chargeTooltip}>
                 <span>
                   <Button
-                    size="small"
-                    variant="contained"
+                    size="large"
+                    variant="brandYellow"
                     startIcon={<PaidRoundedIcon fontSize="small" />}
                     disabled={
                       !clienteId ||
