@@ -409,27 +409,6 @@ export default function AuditSection() {
             />
           </Grid>
 
-          <Grid item xs={6} md={2}>
-            <TextField
-              label="Estado (payment)"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              placeholder="posted, voided..."
-              fullWidth
-            />
-          </Grid>
-
-          {/* filtro por userId (Mongo) */}
-          <Grid item xs={12} md={4}>
-            <TextField
-              label="UserId (Mongo) – actor del asiento"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value.trim())}
-              placeholder="653b... (opcional)"
-              fullWidth
-            />
-          </Grid>
-
           <Grid item xs={12} md="auto">
             <Stack direction="row" spacing={1} sx={{ height: "100%" }}>
               <Button
@@ -453,14 +432,14 @@ export default function AuditSection() {
                 Limpiar
               </Button>
               <Button
-                variant={includePayment ? "contained" : "outlined"}
+                variant="brandYellow"
                 color={includePayment ? "secondary" : "inherit"}
                 onClick={() => {
                   setIncludePayment((v) => !v);
                   setPage(0);
                 }}
               >
-                {includePayment ? "Con Payment" : "Sin Payment"}
+                {includePayment ? "Con pago" : "Sin pago"}
               </Button>
             </Stack>
           </Grid>

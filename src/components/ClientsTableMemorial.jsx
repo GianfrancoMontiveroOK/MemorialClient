@@ -286,10 +286,12 @@ export default function ClientsTableMemorial() {
     activeQuery.byIdCliente !== undefined ||
     activeQuery.byDocumento !== undefined;
 
+    const SECTION_PY = 1;
+
   return (
     <Paper elevation={0} sx={{ borderRadius: 3, overflow: "hidden" }}>
-      <Toolbar sx={{ gap: 1, flexWrap: "wrap", alignItems: "center" }}>
-        <Typography variant="h4" fontWeight={700} textTransform="uppercase">
+      <Toolbar sx={{ gap: 1, flexWrap: "wrap", alignItems: "center", py: SECTION_PY }}>
+        <Typography variant="h5" fontWeight={700} textTransform="uppercase">
           Clientes {loading ? "…" : `· ${total ?? 0}`}
         </Typography>
 
@@ -415,6 +417,7 @@ export default function ClientsTableMemorial() {
         <Button
           variant="brandYellow"
           startIcon={<AddIcon />}
+          size= "medium"
           onClick={() => navigate("/app/clientes/nuevo")}
         >
           Nuevo cliente
@@ -539,19 +542,21 @@ export default function ClientsTableMemorial() {
                         >
                           <Chip
                             size="small"
-                            variant="outlined"
+                            variant="contained"
                             label={fmtDiff(diff)}
                             sx={{
                               fontWeight: 700,
                               ...(above
                                 ? {
+                                    bgcolor: "success.main",
+                                    color: "success.contrastText",
                                     borderColor: "success.main",
-                                    color: "success.dark",
                                   }
                                 : below
                                 ? {
+                                    bgcolor: "error.main",
+                                    color: "error.contrastText",
                                     borderColor: "error.main",
-                                    color: "error.dark",
                                   }
                                 : { opacity: 0.7 }),
                             }}

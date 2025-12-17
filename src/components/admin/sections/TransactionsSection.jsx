@@ -240,7 +240,7 @@ export default function TransactionsSection() {
         mb={1.5}
       >
         <Typography variant="h5" fontWeight={800}>
-          Transacciones
+          TRANSACCIONES
         </Typography>
         <Stack direction="row" spacing={1} flexWrap="wrap">
           <Button
@@ -340,6 +340,7 @@ export default function TransactionsSection() {
             variant="brandYellow"
             onClick={handleApplyFilters}
             disabled={loading}
+            sx={{ minWidth: 90 }}
           >
             Aplicar
           </Button>

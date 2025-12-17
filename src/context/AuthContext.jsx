@@ -12,6 +12,7 @@ import {
   verifyTokenRequest,
   logoutRequest,
   confirmEmailRequest,
+  setMyPreferencesRequest, // ✅ NUEVO
 } from "../api/auth";
 
 const AuthContext = createContext();
@@ -53,9 +54,10 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     try {
       const res = await loginRequest(credentials);
-      if (res.status === 200 && res.data?.user) {
+      const u = res.data?.user;
+      if (res.status === 200 && u) {
         setIsAuthenticated(true);
-        setUser(res.data.user);
+        setUser(u);
       } else {
         setIsAuthenticated(false);
         setUser(null);
@@ -64,7 +66,9 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       setIsAuthenticated(false);
       setUser(null);
-      setErrors([error?.response?.data?.message || "Error de inicio de sesión"]);
+      setErrors([
+        error?.response?.data?.message || "Error de inicio de sesión",
+      ]);
     } finally {
       setLoading(false);
     }
@@ -83,6 +87,28 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
     }
   };
+
+  // ✅ Guardar preferencias del usuario (ej: themeMode)
+  // payload ejemplo: { themeMode: "dark" }
+  const setMyPreferences = useCallback(async (payload) => {
+    try {
+      const res = await setMyPreferencesRequest(payload);
+
+      // backend devuelve { user: ... }
+      const updatedUser = res.data?.user;
+      if (res.status === 200 && updatedUser) {
+        setUser(updatedUser); // 👈 actualiza al toque el theme en FE
+        return { ok: true, user: updatedUser };
+      }
+
+      return {
+        ok: false,
+        message: res.data?.message || "No se pudieron guardar preferencias",
+      };
+    } catch (e) {
+      return { ok: false, message: "Error de red" };
+    }
+  }, []);
 
   // Confirmar email de registro
   const confirmEmail = useCallback(async (token) => {
@@ -121,9 +147,15 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       try {
         const res = await verifyTokenRequest();
-        if (res.status === 200 && res.data) {
+
+        // ✅ soporta ambos formatos:
+        // - nuevo: { user: {...} }
+        // - viejo: {...userData}
+        const u = res.data?.user || res.data;
+
+        if (res.status === 200 && u) {
           setIsAuthenticated(true);
-          setUser(res.data);
+          setUser(u);
         } else {
           setIsAuthenticated(false);
           setUser(null);
@@ -149,6 +181,7 @@ export const AuthProvider = ({ children }) => {
         signin,
         logout,
         confirmEmail,
+        setMyPreferences, // ✅ NUEVO
       }}
     >
       {children}

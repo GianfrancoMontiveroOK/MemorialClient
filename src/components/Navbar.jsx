@@ -15,6 +15,7 @@ import {
   MenuItem,
   useTheme,
   useMediaQuery,
+  Tooltip,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
@@ -26,10 +27,8 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import AccountCircle from "@mui/icons-material/AccountCircle";
 import Brightness4Icon from "@mui/icons-material/Brightness4";
 import Brightness7Icon from "@mui/icons-material/Brightness7";
-import DashboardCustomizeRoundedIcon from "@mui/icons-material/DashboardCustomizeRounded";
 
 import { useAuth } from "../context/AuthContext";
-import { useThemeMode } from "../context/ThemeModeContext";
 import AppLogo from "./AppLogo";
 
 const NAV_LINKS = [
@@ -41,11 +40,11 @@ const NAV_LINKS = [
 
 export default function NavbarMemorial({
   branchUrl = "https://wa.me/5492604000000?text=Hola%20Memorial,%20quisiera%20contactar%20la%20sucursal",
+  mode = "dark", // ✅ viene desde App.jsx
+  onToggleTheme = () => {}, // ✅ viene desde App.jsx
 }) {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up("lg")); // "COMPU"
-  const tm = useThemeMode() || {};
-  const safeToggleMode = tm.toggleMode || (() => {});
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
@@ -60,6 +59,14 @@ export default function NavbarMemorial({
 
   const handleMenu = (event) => setAnchorEl(event.currentTarget);
   const handleCloseMenu = () => setAnchorEl(null);
+
+  const handleToggleMode = useCallback(async () => {
+    try {
+      await onToggleTheme();
+    } catch (e) {
+      console.error("onToggleTheme:", e);
+    }
+  }, [onToggleTheme]);
 
   const goSection = useCallback(
     (id) => {
@@ -79,9 +86,7 @@ export default function NavbarMemorial({
 
       if (pathname !== "/") {
         navigate(`/#${id}`);
-        // el scroll after-navigate lo hace el useEffect de HomePage
       } else {
-        // actualizo el hash para que quede compartible
         if (window.location.hash !== `#${id}`) {
           window.history.replaceState(null, "", `#${id}`);
         }
@@ -102,6 +107,9 @@ export default function NavbarMemorial({
     }
   };
 
+  const ModeIcon = mode === "dark" ? Brightness7Icon : Brightness4Icon;
+  const modeLabel = mode === "dark" ? "Modo Claro" : "Modo Oscuro";
+
   return (
     <AppBar
       position="sticky"
@@ -117,7 +125,6 @@ export default function NavbarMemorial({
     >
       {/* ===================== TOOLBAR ===================== */}
       {!showSimplified ? (
-        // ---------- Versión COMPLETA (Home o Mobile) ----------
         <Toolbar sx={{ minHeight: { xs: 64, md: 76 }, px: { xs: 2, md: 4 } }}>
           {/* Mobile: hamburger */}
           <IconButton
@@ -171,7 +178,7 @@ export default function NavbarMemorial({
           <Stack
             direction="row"
             spacing={1}
-            sx={{ display: { xs: "none", md: "flex" } }}
+            sx={{ display: { xs: "none", md: "flex" }, alignItems: "center" }}
           >
             <Button
               variant="soft"
@@ -243,6 +250,18 @@ export default function NavbarMemorial({
                 >
                   <MenuItem disabled>{user?.name || user?.email}</MenuItem>
                   <Divider />
+
+                  {/* ✅ opción de modo en menú */}
+                  <MenuItem
+                    onClick={async () => {
+                      handleCloseMenu();
+                      await handleToggleMode();
+                    }}
+                  >
+                    <ModeIcon fontSize="small" style={{ marginRight: 8 }} />
+                    {modeLabel}
+                  </MenuItem>
+
                   <MenuItem
                     onClick={() => {
                       handleCloseMenu();
@@ -251,6 +270,7 @@ export default function NavbarMemorial({
                   >
                     Mi Panel
                   </MenuItem>
+
                   <MenuItem
                     onClick={() => {
                       handleCloseMenu();
@@ -271,8 +291,9 @@ export default function NavbarMemorial({
             minHeight: { xs: 64, md: 76 },
             px: { xs: 2, md: 4 },
             display: "grid",
-            gridTemplateColumns: "48px 1fr 48px", // izq | centro (logo) | der (avatar)
+            gridTemplateColumns: "48px 1fr auto",
             alignItems: "center",
+            gap: 1,
           }}
         >
           <Box />
@@ -288,7 +309,8 @@ export default function NavbarMemorial({
           >
             <AppLogo height={38} />
           </Box>
-          <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+
+          <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
             {isAuthenticated && (
               <>
                 <IconButton
@@ -327,6 +349,17 @@ export default function NavbarMemorial({
                 >
                   <MenuItem disabled>{user?.name || user?.email}</MenuItem>
                   <Divider />
+
+                  <MenuItem
+                    onClick={async () => {
+                      handleCloseMenu();
+                      await handleToggleMode();
+                    }}
+                  >
+                    <ModeIcon fontSize="small" style={{ marginRight: 8 }} />
+                    {modeLabel}
+                  </MenuItem>
+
                   <MenuItem
                     onClick={() => {
                       handleCloseMenu();
@@ -335,6 +368,7 @@ export default function NavbarMemorial({
                   >
                     Mi Panel
                   </MenuItem>
+
                   <MenuItem
                     onClick={() => {
                       handleCloseMenu();
@@ -351,7 +385,7 @@ export default function NavbarMemorial({
         </Toolbar>
       )}
 
-      {/* ============== Drawer mobile (sin cambios) ============== */}
+      {/* ============== Drawer mobile ============== */}
       <Drawer
         anchor="left"
         open={drawerOpen}
@@ -389,33 +423,6 @@ export default function NavbarMemorial({
                 }}
               >
                 Memorial
-              </Box>
-              <Box sx={{ mt: 1.5, display: "flex", justifyContent: "center" }}>
-                <Button
-                  onClick={() => {
-                    safeToggleMode();
-                    setDrawerOpen(false);
-                  }}
-                  variant="soft"
-                  color="contrast"
-                  startIcon={
-                    theme.palette.mode === "dark" ? (
-                      <Brightness7Icon />
-                    ) : (
-                      <Brightness4Icon />
-                    )
-                  }
-                  sx={{
-                    fontFamily: `"Cormorant Garamond", serif`,
-                    fontWeight: 700,
-                    fontSize: "0.95rem",
-                    textTransform: "uppercase",
-                    px: 1.5,
-                    py: 0.75,
-                  }}
-                >
-                  {theme.palette.mode === "dark" ? "Modo Claro" : "Modo Oscuro"}
-                </Button>
               </Box>
             </Box>
           </Box>

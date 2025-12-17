@@ -17,6 +17,13 @@ import {
   Divider,
   Pagination,
   Typography,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Snackbar,
+  Alert,
+  LinearProgress,
 } from "@mui/material";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
@@ -25,8 +32,8 @@ import LocalAtmRoundedIcon from "@mui/icons-material/LocalAtmRounded";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
-
 import { useAuth } from "../../../context/AuthContext";
+import { alpha } from "@mui/material/styles";
 import {
   listArqueosUsuarios,
   getArqueoUsuarioDetalle,
@@ -98,9 +105,19 @@ function AdminPersonalCajaCard({ dateFrom, dateTo, onMoved }) {
   const [loading, setLoading] = React.useState(false);
   const [saldoAdmin, setSaldoAdmin] = React.useState(0);
   const [saldoChicaGlobal, setSaldoChicaGlobal] = React.useState(0);
-  const [note, setNote] = React.useState("");
+
+  const [openConfirm, setOpenConfirm] = React.useState(false);
+  const [snack, setSnack] = React.useState({
+    open: false,
+    severity: "info",
+    message: "",
+  });
 
   const canShow = myRole === "admin" && !!myId;
+
+  const showSnack = (severity, message) =>
+    setSnack({ open: true, severity, message });
+  const closeSnack = () => setSnack((s) => ({ ...s, open: false }));
 
   const fetchBalances = React.useCallback(async () => {
     if (!canShow) return;
@@ -126,6 +143,7 @@ function AdminPersonalCajaCard({ dateFrom, dateTo, onMoved }) {
       const [rPer, rGlob] = await Promise.all([pPersonal, pGlobal]);
 
       setSaldoAdmin(Number(rPer?.data?.header?.totals?.balance || 0));
+
       // Soporta dos posibles formas: { totals: {...} } o { totals: { CAJA_CHICA: {...} } }
       const tg = rGlob?.data?.totals;
       const balanceGlobal =
@@ -136,6 +154,7 @@ function AdminPersonalCajaCard({ dateFrom, dateTo, onMoved }) {
       setSaldoChicaGlobal(Number(balanceGlobal || 0));
     } catch (e) {
       console.error(e);
+      showSnack("error", "No se pudieron cargar los saldos.");
     } finally {
       setLoading(false);
     }
@@ -145,31 +164,35 @@ function AdminPersonalCajaCard({ dateFrom, dateTo, onMoved }) {
     fetchBalances();
   }, [fetchBalances]);
 
+  // UX: abrir confirm modal
   const moveAllToCajaChica = async () => {
     const amt = Number(saldoAdmin || 0);
     if (amt <= 0) {
-      window.alert("No hay saldo en CAJA_ADMIN para mover.");
+      showSnack("warning", "No hay saldo en CAJA_ADMIN para mover.");
       return;
     }
-    const ok = window.confirm(
-      `Se moverán ${fmtMoney(
-        amt
-      )} desde CAJA_ADMIN a CAJA_CHICA (global). ¿Confirmar?`
-    );
-    if (!ok) return;
+    setOpenConfirm(true);
+  };
+
+  const confirmMove = async () => {
+    const amt = Number(saldoAdmin || 0);
+    setOpenConfirm(false);
 
     try {
       await depositoCajaChica({
         adminUserId: myId,
+        // ✅ si tu backend usa "amount" lo toma; si no, lo ignora.
         amount: amt,
         currency: "ARS",
-        note,
       });
+
+      showSnack("success", "Movimiento realizado: CAJA_ADMIN → CAJA_CHICA.");
       await fetchBalances();
       onMoved?.();
     } catch (e) {
       console.error(e);
-      window.alert(
+      showSnack(
+        "error",
         e?.response?.data?.message ||
           e?.message ||
           "No se pudo mover a caja chica"
@@ -180,99 +203,168 @@ function AdminPersonalCajaCard({ dateFrom, dateTo, onMoved }) {
   if (!canShow) return null;
 
   return (
-    <Paper
-      variant="outlined"
-      sx={{
-        p: 2,
-        mb: 1.5,
-        borderRadius: 2,
-        bgcolor: (t) =>
-          t.palette.mode === "dark"
-            ? "rgba(255,255,255,0.02)"
-            : "rgba(0,0,0,0.02)",
-      }}
-    >
-      <Stack
-        direction={{ xs: "column", md: "row" }}
-        spacing={2}
-        alignItems={{ xs: "stretch", md: "center" }}
-        justifyContent="space-between"
+    <>
+      <Paper
+        variant="outlined"
+        sx={(t) => ({
+          p: 2,
+          mb: 1.5,
+          borderRadius: 2,
+          overflow: "hidden",
+          bgcolor:
+            t.palette.mode === "dark"
+              ? "rgba(255,255,255,0.02)"
+              : "rgba(0,0,0,0.02)",
+          borderColor: alpha(
+            t.palette.roles?.outline || t.palette.divider,
+            0.7
+          ),
+        })}
       >
-        <Stack
-          direction="row"
-          spacing={1.5}
-          alignItems="center"
-          flexWrap="wrap"
-        >
-          <LocalAtmRoundedIcon color="primary" />
-          <Typography variant="subtitle1" fontWeight={800}>
-            Mi caja (Admin)
-          </Typography>
-        </Stack>
+        {loading ? <LinearProgress /> : <Box sx={{ height: 4 }} />}
 
-        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-          {/* CAJA_ADMIN (personal) */}
-          <Chip
-            icon={<SavingsRoundedIcon />}
-            color="default"
-            variant="outlined"
-            label={
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Typography variant="body2" color="text.secondary">
-                  CAJA_ADMIN
-                </Typography>
-                <Typography variant="body2" fontWeight={800}>
-                  {loading ? "…" : fmtMoney(saldoAdmin)}
-                </Typography>
-              </Stack>
-            }
-          />
-          {/* CAJA_CHICA (GLOBAL) */}
-          <Chip
-            icon={<AccountBalanceRoundedIcon />}
-            color="success"
-            variant="outlined"
-            label={
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Typography variant="body2" color="text.secondary">
-                  CAJA_CHICA (GLOBAL)
-                </Typography>
-                <Typography variant="body2" fontWeight={800}>
-                  {loading ? "…" : fmtMoney(saldoChicaGlobal)}
-                </Typography>
-              </Stack>
-            }
-          />
-        </Stack>
-
-        <Stack direction="row" spacing={1}>
-          <Button
-            variant="contained"
-            startIcon={<ArrowForwardRoundedIcon />}
-            onClick={moveAllToCajaChica}
-            disabled={loading || Number(saldoAdmin) <= 0}
-            title={
-              Number(saldoAdmin) <= 0
-                ? "Sin saldo en CAJA_ADMIN"
-                : `Mover ${fmtMoney(saldoAdmin)} a CAJA_CHICA`
-            }
+        <Stack spacing={1.5} sx={{ pt: 1.5 }}>
+          {/* Header (mismo estilo que PersonalCaja.jsx) */}
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={1.25}
+            alignItems={{ xs: "flex-start", md: "center" }}
+            justifyContent="space-between"
           >
-            Mover todo a caja chica
-          </Button>
-        </Stack>
-      </Stack>
+            <Stack
+              direction="row"
+              spacing={1.25}
+              alignItems="center"
+              flexWrap="wrap"
+            >
+              <LocalAtmRoundedIcon color="primary" />
+              <Typography variant="subtitle1" fontWeight={900}>
+                Mi caja (Admin)
+              </Typography>
 
-      <Box mt={1.25}>
-        <TextField
-          fullWidth
-          size="small"
-          label="Nota (opcional)"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Ej: cierre de caja diaria"
-        />
-      </Box>
-    </Paper>
+              <Chip
+                size="small"
+                variant="outlined"
+                label="PERSONAL + GLOBAL"
+                sx={{ ml: 0.5, opacity: 0.9 }}
+              />
+            </Stack>
+
+            <Button
+              variant="brandYellow"
+              startIcon={<ArrowForwardRoundedIcon />}
+              onClick={moveAllToCajaChica}
+              disabled={loading || Number(saldoAdmin) <= 0}
+              title={
+                Number(saldoAdmin) <= 0
+                  ? "Sin saldo en CAJA_ADMIN"
+                  : `Mover ${fmtMoney(saldoAdmin)} a CAJA_CHICA`
+              }
+            >
+              Mover todo a caja chica
+            </Button>
+          </Stack>
+
+          <Divider />
+
+          {/* Balances (misma UX de bloques) */}
+          <Stack direction="row" spacing={1.5} flexWrap="wrap">
+            {/* CAJA_ADMIN */}
+            <Box
+              sx={(t) => ({
+                minWidth: 260,
+                flex: "1 1 260px",
+                borderRadius: 2,
+                p: 1.25,
+                border: `1px solid ${alpha(
+                  t.palette.roles?.outline || t.palette.divider,
+                  0.7
+                )}`,
+                bgcolor: alpha(t.palette.background.paper, 0.6),
+              })}
+            >
+              <Stack direction="row" spacing={1.25} alignItems="center">
+                <SavingsRoundedIcon />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    CAJA_ADMIN
+                  </Typography>
+                  <Typography variant="h6" fontWeight={900} noWrap>
+                    {loading ? "…" : fmtMoney(saldoAdmin)}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Box>
+
+            {/* CAJA_CHICA GLOBAL */}
+            <Box
+              sx={(t) => ({
+                minWidth: 260,
+                flex: "1 1 260px",
+                borderRadius: 2,
+                p: 1.25,
+                border: `1px solid ${alpha(
+                  t.palette.roles?.outline || t.palette.divider,
+                  0.7
+                )}`,
+                bgcolor: alpha(t.palette.background.paper, 0.6),
+              })}
+            >
+              <Stack direction="row" spacing={1.25} alignItems="center">
+                <AccountBalanceRoundedIcon />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    CAJA_CHICA (GLOBAL)
+                  </Typography>
+                  <Typography variant="h6" fontWeight={900} noWrap>
+                    {loading ? "…" : fmtMoney(saldoChicaGlobal)}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Box>
+          </Stack>
+        </Stack>
+      </Paper>
+
+      {/* ✅ Confirm dialog */}
+      <Dialog
+        open={openConfirm}
+        onClose={() => setOpenConfirm(false)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Confirmar movimiento</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            Se moverán <b>{fmtMoney(saldoAdmin)}</b> desde <b>CAJA_ADMIN</b> a{" "}
+            <b>CAJA_CHICA (GLOBAL)</b>.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenConfirm(false)}>Cancelar</Button>
+          <Button variant="contained" onClick={confirmMove}>
+            Confirmar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ✅ Snackbar */}
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={4500}
+        onClose={closeSnack}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={closeSnack}
+          severity={snack.severity}
+          variant="filled"
+          sx={{ width: "100%" }}
+        >
+          {snack.message}
+        </Alert>
+      </Snackbar>
+    </>
   );
 }
 
@@ -349,7 +441,7 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
         mb={1.5}
       >
         <Typography variant="h5" fontWeight={800}>
-          Arqueos (caja por usuario)
+          ARQUEOS
         </Typography>
         <Stack direction="row" spacing={1}>
           <Button

@@ -264,7 +264,7 @@ export default function OutboxSection() {
         mb={1.5}
       >
         <Typography variant="h5" fontWeight={800}>
-          Outbox (eventos hacia ERP/externos)
+          OUTBOX (eventos hacia ERP/externos)
         </Typography>
         <Stack direction="row" spacing={1}>
           <Button

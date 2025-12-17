@@ -12,55 +12,27 @@ import {
 import PeopleAltIcon from "@mui/icons-material/PeopleAlt";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
 
-// NUEVOS (transacciones/admin)
-import SyncAltIcon from "@mui/icons-material/SyncAlt"; // Transacciones (lista)
-import AccountBalanceIcon from "@mui/icons-material/AccountBalance"; // Diario (asientos)
-import OutboxIcon from "@mui/icons-material/Outbox"; // Outbox (eventos a ERP)
-import PolicyIcon from "@mui/icons-material/Policy"; // Auditoría
-import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded"; // Arqueos
+import SyncAltIcon from "@mui/icons-material/SyncAlt";
+import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
+import OutboxIcon from "@mui/icons-material/Outbox";
+import PolicyIcon from "@mui/icons-material/Policy";
+import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 
-// 🔹 Icono para Recibos
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 
 export const DRAWER_WIDTH = 240;
 
-/**
- * Mantenemos todas las secciones disponibles aquí.
- * Los contenedores pueden filtrar con `filterKeys` para mostrar sólo algunas.
- */
 export const SECTIONS = [
   { key: "clientes", label: "CLIENTES", icon: <PeopleAltIcon /> },
-
-  // 🔹 Recibos (PDF/WhatsApp)
   { key: "recibos", label: "RECIBOS", icon: <PictureAsPdfIcon /> },
-
-  // 🔹 Infra de backoffice
   { key: "transacciones", label: "TRANSACCIONES", icon: <SyncAltIcon /> },
   { key: "diario", label: "DIARIO", icon: <AccountBalanceIcon /> },
-
-  // 🔹 NUEVO: Arqueos (caja por usuario)
-  {
-    key: "arqueos",
-    label: "ARQUEOS",
-    icon: <AccountBalanceWalletRoundedIcon />,
-  },
-
+  { key: "arqueos", label: "ARQUEOS", icon: <AccountBalanceWalletRoundedIcon /> },
   { key: "outbox", label: "OUTBOX", icon: <OutboxIcon /> },
   { key: "auditoria", label: "AUDITORÍA", icon: <PolicyIcon /> },
-
   { key: "usuarios", label: "USUARIOS", icon: <PersonOutlineIcon /> },
 ];
 
-/**
- * AdminSidebar
- *
- * Props:
- * - section: string (key activa)
- * - onChange(key): callback al seleccionar
- * - filterKeys?: string[]  -> si se pasa, sólo renderiza las keys incluidas
- * - title?: string         -> título del panel (default: "Admin")
- * - subtitle?: string      -> subtítulo (default: "Panel de control")
- */
 export default function AdminSidebar({
   section,
   onChange,
@@ -68,14 +40,22 @@ export default function AdminSidebar({
   title = "Admin",
   subtitle = "Panel de control",
 }) {
-  // Si se provee filterKeys, filtramos; si no, todas
   const items = Array.isArray(filterKeys)
     ? SECTIONS.filter((s) => filterKeys.includes(s.key))
     : SECTIONS;
 
   return (
-    <Box sx={{ width: DRAWER_WIDTH, p: 1 }}>
-      <Box sx={{ px: 2, py: 2 }}>
+    <Box
+      sx={{
+        width: DRAWER_WIDTH,
+        height: "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "flex-start",
+      }}
+    >
+
+      <Box sx={{ px: 2, pb: 1.5 }}>
         <Typography variant="h6" fontWeight={800}>
           {title}
         </Typography>
@@ -84,9 +64,17 @@ export default function AdminSidebar({
         </Typography>
       </Box>
 
-      <Divider sx={{ mb: 0.5 }} />
+      <Divider sx={{ mx: 2, mb: 1 }} />
 
-      <List dense>
+      <List
+        dense
+        sx={{
+          px: 1,
+          pb: 1,
+          flex: 1,
+          overflowY: "auto",
+        }}
+      >
         {items.map((s) => {
           const selected = s.key === section;
           return (
@@ -109,7 +97,10 @@ export default function AdminSidebar({
               <ListItemIcon sx={{ minWidth: 40 }}>{s.icon}</ListItemIcon>
               <ListItemText
                 primary={s.label}
-                primaryTypographyProps={{ fontWeight: selected ? 700 : 500 }}
+                primaryTypographyProps={{
+                  fontWeight: selected ? 800 : 600,
+                  letterSpacing: 0.3,
+                }}
               />
             </ListItemButton>
           );

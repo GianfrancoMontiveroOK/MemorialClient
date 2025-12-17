@@ -58,15 +58,6 @@ export default function CollectorDetailLayout({
 
         <Stack direction="row" spacing={1}>
           <Button
-            startIcon={<ContentCutRoundedIcon />}
-            variant="outlined"
-            color="warning"
-            onClick={onArquearCaja}
-            disabled={anyLoading}
-          >
-            Arquear caja
-          </Button>
-          <Button
             startIcon={<RefreshRoundedIcon />}
             onClick={onRefresh}
             disabled={anyLoading}

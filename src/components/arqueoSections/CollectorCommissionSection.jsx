@@ -269,13 +269,13 @@ export default function CollectorCommissionSection({
             {fmtMoney(pending)}
           </Typography>
           <Button
-            size="small"
+            size="medium"
             variant="contained"
             onClick={handlePay}
             disabled={disabled || paying || loading || pending <= 0}
           >
             {paying ? (
-              <CircularProgress size={18} sx={{ color: "inherit" }} />
+              <CircularProgress size={20} sx={{ color: "inherit" }} />
             ) : (
               "Pagar comisión"
             )}

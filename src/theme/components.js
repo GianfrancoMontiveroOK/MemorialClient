@@ -24,6 +24,22 @@ export function buildComponents(theme) {
         { props: { variant: "display" }, style: theme.typography.display },
       ],
     },
+
+    MuiPaper: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          // 🔥 mata el overlay/gradient de Paper en dark
+          backgroundImage: "none",
+
+          // (opcional) borde sutil para separar superficies
+          border:
+            theme.palette.mode === "dark"
+              ? `1px solid ${alpha(theme.palette.common.white, 0.1)}`
+              : "1px solid transparent",
+        }),
+      },
+    },
+
     MuiSwitch: {
       styleOverrides: {
         // color base del track cuando está apagado (unchecked)
@@ -337,8 +353,9 @@ export function buildComponents(theme) {
           borderRadius: 10,
           backgroundColor:
             theme.palette.mode === "dark"
-              ? alpha(theme.palette.common.white, 0.02)
+              ? theme.palette.roles.subtleBg // 👈 en vez de alpha(white, 0.02)
               : theme.palette.background.paper,
+
           "&:hover .MuiOutlinedInput-notchedOutline": {
             borderColor: alpha(theme.palette.text.primary, 0.35),
           },
@@ -349,21 +366,11 @@ export function buildComponents(theme) {
           },
         }),
         notchedOutline: ({ theme }) => ({
-          borderColor: alpha(theme.palette.text.primary, 0.25),
+          borderColor:
+            theme.palette.mode === "dark"
+              ? theme.palette.divider // 👈 mejor que alpha(text,0.25) en marrón
+              : alpha(theme.palette.text.primary, 0.25),
         }),
-        input: ({ theme }) => ({
-          padding: "14px 14px",
-          fontSize: "0.98rem",
-          "::placeholder": {
-            color: alpha(theme.palette.text.primary, 0.5),
-            opacity: 1,
-          },
-        }),
-        // textarea / multiline
-        inputMultiline: {
-          padding: "12px 14px",
-          lineHeight: 1.5,
-        },
       },
     },
 
@@ -448,61 +455,71 @@ export function buildComponents(theme) {
         },
 
         // Estilo para FILLED según color
-filled: ({ ownerState, theme }) => {
-  const { color = "default" } = ownerState;
+        filled: ({ ownerState, theme }) => {
+          const { color = "default" } = ownerState;
 
-  const isDark = theme.palette.mode === "dark";
-  const txt = theme.palette.text.primary;
+          const isDark = theme.palette.mode === "dark";
+          const txt = theme.palette.text.primary;
 
-  // 🎯 DEFAULT (sin color): pill neutro y hover sutil
-  if (
-    color === "default" ||
-    !["primary","secondary","success","error","warning","info","contrast"].includes(color)
-  ) {
-    const bg = isDark
-      ? alpha(theme.palette.common.white, 0.08)
-      : alpha(theme.palette.primary.main, 0.08);
+          // 🎯 DEFAULT (sin color): pill neutro y hover sutil
+          if (
+            color === "default" ||
+            ![
+              "primary",
+              "secondary",
+              "success",
+              "error",
+              "warning",
+              "info",
+              "contrast",
+            ].includes(color)
+          ) {
+            const bg = isDark
+              ? alpha(theme.palette.common.white, 0.08)
+              : alpha(theme.palette.primary.main, 0.08);
 
-    const bgHover = isDark
-      ? alpha(theme.palette.common.white, 0.12)
-      : alpha(theme.palette.primary.main, 0.14);
+            const bgHover = isDark
+              ? alpha(theme.palette.common.white, 0.12)
+              : alpha(theme.palette.primary.main, 0.14);
 
-    return {
-      backgroundColor: bg,
-      color: txt,
-      boxShadow: "none",
-      "&:hover, &.MuiChip-clickable:hover": {
-        backgroundColor: bgHover,
-        boxShadow: "none",
-      },
-    };
-  }
+            return {
+              backgroundColor: bg,
+              color: txt,
+              boxShadow: "none",
+              "&:hover, &.MuiChip-clickable:hover": {
+                backgroundColor: bgHover,
+                boxShadow: "none",
+              },
+            };
+          }
 
-  // 🎯 COLOREADOS (primary/success/error/warning/etc.)
-  const pal =
-    color === "contrast"
-      ? theme.palette.contrast
-      : theme.palette[color];
+          // 🎯 COLOREADOS (primary/success/error/warning/etc.)
+          const pal =
+            color === "contrast"
+              ? theme.palette.contrast
+              : theme.palette[color];
 
-  // Texto por defecto del color
-  let fg = pal?.contrastText || txt;
+          // Texto por defecto del color
+          let fg = pal?.contrastText || txt;
 
-  // Mejor contraste para success (verde)
-  if (color === "success") {
-    fg = isDark ? theme.palette.common.white : theme.palette.common.white;
-  }
+          // Mejor contraste para success (verde)
+          if (color === "success") {
+            fg = isDark
+              ? theme.palette.common.white
+              : theme.palette.common.white;
+          }
 
-  const bg = pal?.main || alpha(txt, 0.08);
+          const bg = pal?.main || alpha(txt, 0.08);
 
-  return {
-    backgroundColor: bg,
-    color: fg,
-    "&:hover, &.MuiChip-clickable:hover": {
-      backgroundColor: isDark ? alpha(bg, 0.88) : alpha(bg, 0.92),
-      boxShadow: "0 1px 0 rgba(0,0,0,0.06), 0 3px 8px rgba(0,0,0,0.10)",
-    },
-  };
-},
+          return {
+            backgroundColor: bg,
+            color: fg,
+            "&:hover, &.MuiChip-clickable:hover": {
+              backgroundColor: isDark ? alpha(bg, 0.88) : alpha(bg, 0.92),
+              boxShadow: "0 1px 0 rgba(0,0,0,0.06), 0 3px 8px rgba(0,0,0,0.10)",
+            },
+          };
+        },
 
         // Estilo para OUTLINED según color
         outlined: ({ ownerState, theme }) => {

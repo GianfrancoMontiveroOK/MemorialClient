@@ -251,7 +251,7 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
         mb={1.5}
       >
         <Typography variant="h5" fontWeight={800}>
-          Arqueos  (caja por usuario)
+          ARQUEOS
         </Typography>
         <Stack direction="row" spacing={1}>
           <Button

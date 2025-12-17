@@ -48,7 +48,7 @@ export default function BoxFilters({
           <MenuItem value="">Todos</MenuItem>
           <MenuItem value="debit">Ingresos</MenuItem>
           <MenuItem value="credit">Egresos</MenuItem>
-        </TextField>Hey, Cortana. Nothing. 
+        </TextField>
         <TextField
           size="small"
           label="Códigos de cuenta (A,B,C)"
@@ -58,7 +58,7 @@ export default function BoxFilters({
           sx={{ minWidth: 260 }}
           disabled={disabled}
         />
-        <Button variant="contained" onClick={onApply} disabled={disabled}>
+        <Button variant="brandYellow" onClick={onApply} disabled={disabled} sx={{ minWidth: 90 }}>
           Aplicar
         </Button>
       </Stack>
