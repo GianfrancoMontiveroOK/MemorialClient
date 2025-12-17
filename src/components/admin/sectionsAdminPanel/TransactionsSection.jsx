@@ -1,5 +1,5 @@
 // src/components/admin/sections/TransactionsSection.jsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef } from "react";
 import {
   Box,
   Paper,
@@ -27,6 +27,7 @@ import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
 import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
+import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import { useTransactions } from "../../../context/TransactionsContext";
 
 /* ---------------- helpers ---------------- */
@@ -91,9 +92,16 @@ export default function TransactionsSection() {
     setStatus,
     refresh,
     fetchPayments,
+    // ⬇️ importadores desde el contexto
+    importNaranja,
+    importBancoNacion,
   } = useTransactions();
 
   const [localQ, setLocalQ] = useState(q || "");
+  const [importing, setImporting] = useState(false);
+
+  const naranjaInputRef = useRef(null);
+  const nacionInputRef = useRef(null);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil((Number(total) || 0) / (Number(limit) || 10))),
@@ -123,15 +131,7 @@ export default function TransactionsSection() {
 
   const exportCSV = () => {
     const rows = [
-      [
-        "Fecha",
-        "Estado",
-        "Cliente",
-        "ID Cliente",
-        "Importe",
-        "Método",
-        "Recibo",
-      ],
+      ["Fecha", "Estado", "Cliente", "ID Cliente", "Importe", "Método", "Recibo"],
       ...items.map((p) => [
         fmtDateTime(p.postedAt || p.createdAt),
         p.status || "posted",
@@ -161,8 +161,61 @@ export default function TransactionsSection() {
     URL.revokeObjectURL(url);
   };
 
+  const handleClickImportNaranja = () => {
+    if (naranjaInputRef.current) naranjaInputRef.current.click();
+  };
+
+  const handleClickImportNacion = () => {
+    if (nacionInputRef.current) nacionInputRef.current.click();
+  };
+
+  const handleImportFile = async (event, tipo) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    try {
+      setImporting(true);
+
+      if (tipo === "naranja") {
+        await importNaranja(file);
+        window.alert("Importación de Naranja completada.");
+      } else {
+        await importBancoNacion(file);
+        window.alert("Importación de Banco Nación completada.");
+      }
+
+      await refresh();
+    } catch (err) {
+      console.error("Error en importación:", err);
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Error inesperado al importar el archivo.";
+      window.alert(msg);
+    } finally {
+      setImporting(false);
+      event.target.value = ""; // permitir re-subir el mismo archivo
+    }
+  };
+
   return (
     <Box>
+      {/* inputs ocultos para subir archivos */}
+      <input
+        type="file"
+        accept=".txt"
+        ref={naranjaInputRef}
+        style={{ display: "none" }}
+        onChange={(e) => handleImportFile(e, "naranja")}
+      />
+      <input
+        type="file"
+        accept=".txt"
+        ref={nacionInputRef}
+        style={{ display: "none" }}
+        onChange={(e) => handleImportFile(e, "nacion")}
+      />
+
       <Stack
         direction={{ xs: "column", md: "row" }}
         spacing={1.5}
@@ -173,20 +226,40 @@ export default function TransactionsSection() {
         <Typography variant="h5" fontWeight={800}>
           Transacciones
         </Typography>
-        <Stack direction="row" spacing={1}>
+
+        <Stack direction="row" spacing={1} flexWrap="wrap">
           <Button
             startIcon={<RefreshRoundedIcon />}
             onClick={() => refresh()}
-            disabled={loading}
+            disabled={loading || importing}
           >
             Refrescar
           </Button>
+
           <Button
             startIcon={<DownloadRoundedIcon />}
             onClick={exportCSV}
             disabled={!items.length}
           >
             Exportar CSV
+          </Button>
+
+          <Button
+            startIcon={<UploadFileRoundedIcon />}
+            variant="outlined"
+            onClick={handleClickImportNaranja}
+            disabled={importing}
+          >
+            Importar Naranja
+          </Button>
+
+          <Button
+            startIcon={<UploadFileRoundedIcon />}
+            variant="outlined"
+            onClick={handleClickImportNacion}
+            disabled={importing}
+          >
+            Importar Banco Nación
           </Button>
         </Stack>
       </Stack>
@@ -254,7 +327,7 @@ export default function TransactionsSection() {
           <Button
             variant="contained"
             onClick={handleApplyFilters}
-            disabled={loading}
+            disabled={loading || importing}
           >
             Aplicar
           </Button>
@@ -295,6 +368,7 @@ export default function TransactionsSection() {
               <TableCell align="right">Acciones</TableCell>
             </TableRow>
           </TableHead>
+
           <TableBody>
             {items.length === 0 && (
               <TableRow>
@@ -305,6 +379,7 @@ export default function TransactionsSection() {
                 </TableCell>
               </TableRow>
             )}
+
             {items.map((p) => {
               const fecha = p.postedAt || p.createdAt;
               const importe = Number(p.amount ?? p.importe ?? 0);
@@ -318,6 +393,7 @@ export default function TransactionsSection() {
               return (
                 <TableRow key={p._id || `${fecha}_${idCli}_${importe}`}>
                   <TableCell>{fmtDateTime(fecha)}</TableCell>
+
                   <TableCell>
                     <Chip
                       size="small"
@@ -342,22 +418,22 @@ export default function TransactionsSection() {
                       variant="outlined"
                     />
                   </TableCell>
+
                   <TableCell>
                     <Stack direction="row" spacing={1} alignItems="center">
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        label={`#${idCli}`}
-                      />
+                      <Chip size="small" variant="outlined" label={`#${idCli}`} />
                       <span>{nombre}</span>
                     </Stack>
                   </TableCell>
+
                   <TableCell align="right" sx={{ fontWeight: 700 }}>
                     {fmtMoney(importe)}
                   </TableCell>
+
                   <TableCell sx={{ textTransform: "capitalize" }}>
                     {metodo}
                   </TableCell>
+
                   <TableCell>
                     <Stack direction="row" spacing={1} alignItems="center">
                       <ReceiptLongRoundedIcon fontSize="small" />
@@ -366,14 +442,13 @@ export default function TransactionsSection() {
                       </Typography>
                     </Stack>
                   </TableCell>
+
                   <TableCell align="right">
                     <Tooltip title={pdfUrl ? "Abrir recibo" : "Sin PDF"}>
                       <span>
                         <IconButton
                           size="small"
-                          onClick={() =>
-                            pdfUrl && window.open(pdfUrl, "_blank")
-                          }
+                          onClick={() => pdfUrl && window.open(pdfUrl, "_blank")}
                           disabled={!pdfUrl}
                         >
                           <OpenInNewRoundedIcon fontSize="small" />
@@ -422,6 +497,7 @@ export default function TransactionsSection() {
                 </MenuItem>
               ))}
             </TextField>
+
             <Typography variant="body2" color="text.secondary">
               {total} resultados
             </Typography>

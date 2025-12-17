@@ -21,6 +21,8 @@ import {
   Chip,
   CircularProgress,
   Alert,
+  Switch,
+  FormControlLabel,
 } from "@mui/material";
 import RefreshRounded from "@mui/icons-material/RefreshRounded";
 import SearchRounded from "@mui/icons-material/SearchRounded";
@@ -31,6 +33,7 @@ import ContentCopyRounded from "@mui/icons-material/ContentCopyRounded";
 import DownloadRounded from "@mui/icons-material/DownloadRounded";
 import { listAdminLedgerEntries } from "../../../api/ledger-entry";
 
+// Helpers
 const fmtAmount = (n) =>
   typeof n === "number"
     ? n.toLocaleString("es-AR", {
@@ -57,14 +60,16 @@ const SIDES = [
   { value: "credit", label: "Crédito" },
 ];
 
-// 👉 Sortables SIN “De/A cuenta”
 const SORTABLE = [
   { value: "postedAt", label: "Fecha contable" },
   { value: "amount", label: "Importe" },
   { value: "side", label: "Lado" },
   { value: "accountCode", label: "Cuenta (propia)" },
-  { value: "fromUserName", label: "De usuario" },
-  { value: "toUserName", label: "A usuario" },
+  { value: "fromAccountCode", label: "De cuenta" },
+  { value: "toAccountCode", label: "A cuenta" },
+  // ✅ NUEVO ESQUEMA: fromUser/toUser en root (strings)
+  { value: "fromUser", label: "De usuario" },
+  { value: "toUser", label: "A usuario" },
   { value: "dimensions.idCobrador", label: "Id. Cobrador" },
   { value: "dimensions.idCliente", label: "Id. Cliente" },
   { value: "createdAt", label: "Creación" },
@@ -85,7 +90,11 @@ export default function AuditSection() {
   const [method, setMethod] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [includePayment, setIncludePayment] = React.useState(false);
-  const [userId, setUserId] = React.useState("");
+  const [userId, setUserId] = React.useState(""); // filtrar por actor userId Mongo
+
+  // UI toggles
+  const [showCounterparty, setShowCounterparty] = React.useState(true); // De→A columnas
+  const [dense, setDense] = React.useState(true);
 
   // Tabla
   const [page, setPage] = React.useState(0);
@@ -100,12 +109,20 @@ export default function AuditSection() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
 
+  const colSpan = React.useMemo(() => {
+    // columnas fijas: Fecha, Lado, Cuenta, Importe, Moneda, IdCobrador, IdCliente, Refs = 8
+    // + contrapartida (from/to) = +2
+    // + payment (method/status) = +2
+    return 8 + (showCounterparty ? 2 : 0) + (includePayment ? 2 : 0);
+  }, [showCounterparty, includePayment]);
+
   const fetchData = React.useCallback(async () => {
     try {
       setLoading(true);
       setError("");
+
       const res = await listAdminLedgerEntries({
-        page: page + 1,
+        page: page + 1, // backend 1-index
         limit: rowsPerPage,
         q,
         dateFrom: dateFrom || undefined,
@@ -119,11 +136,12 @@ export default function AuditSection() {
         maxAmount: maxAmount !== "" ? Number(maxAmount) : undefined,
         method: method || undefined,
         status: status || undefined,
-        includePayment,
+        includePayment: includePayment ? "1" : "0", // ✅ backend usa strings
         sortBy,
         sortDir,
         userId: userId.trim() || undefined,
       });
+
       const payload = res?.data || {};
       if (!payload.ok) throw new Error(payload.message || "Error desconocido");
       setItems(Array.isArray(payload.items) ? payload.items : []);
@@ -181,50 +199,59 @@ export default function AuditSection() {
   };
 
   const onChangeSort = (field) => {
-    if (sortBy === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
+    if (sortBy === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
       setSortBy(field);
       setSortDir("desc");
     }
     setPage(0);
   };
 
-  const visibleCols = 10 + (includePayment ? 2 : 0); // Fecha, Lado, Cuenta, De usuario, A usuario, Importe, Moneda, IdCobrador, IdCliente, (Mét/Est), Refs
-
   const exportCSV = () => {
     const head = [
       "postedAt",
       "side",
       "accountCode",
-      "fromUserName",
-      "toUserName",
       "amount",
       "currency",
       "idCobrador",
       "idCliente",
+      ...(showCounterparty
+        ? ["fromAccountCode", "toAccountCode", "fromUser", "toUser"]
+        : []),
       ...(includePayment ? ["payment.method", "payment.status"] : []),
       "paymentId",
     ];
+
     const rows = items.map((r) => [
       r.postedAt || "",
       r.side || "",
       r.accountCode || "",
-      r.fromUserName || "",
-      r.toUserName || "",
       r.amount ?? "",
       r.currency || "",
       r?.dimensions?.idCobrador ?? "",
       r?.dimensions?.idCliente ?? "",
+      ...(showCounterparty
+        ? [
+            r.fromAccountCode || "",
+            r.toAccountCode || "",
+            r.fromUser || "",
+            r.toUser || "",
+          ]
+        : []),
       ...(includePayment
         ? [r?.payment?.method || "", r?.payment?.status || ""]
         : []),
       r.paymentId || "",
     ]);
+
     const csv = [head, ...rows]
       .map((row) =>
         row.map((c) => `"${String(c ?? "").replaceAll('"', '""')}"`).join(",")
       )
       .join("\n");
+
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -267,13 +294,14 @@ export default function AuditSection() {
         <Grid container spacing={2}>
           <Grid item xs={12} md={4}>
             <TextField
-              label="Buscar (cuenta, nombre, idCliente, idCobrador, importe)"
+              label="Buscar (cuenta, from/to usuario, idCliente, idCobrador, importe)"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               fullWidth
               InputProps={{ endAdornment: <SearchRounded fontSize="small" /> }}
             />
           </Grid>
+
           <Grid item xs={6} md={2}>
             <TextField
               label="Desde"
@@ -294,10 +322,11 @@ export default function AuditSection() {
               InputLabelProps={{ shrink: true }}
             />
           </Grid>
+
           <Grid item xs={6} md={2}>
             <TextField
-              select
               label="Lado"
+              select
               value={side}
               onChange={(e) => setSide(e.target.value)}
               fullWidth
@@ -309,6 +338,7 @@ export default function AuditSection() {
               ))}
             </TextField>
           </Grid>
+
           <Grid item xs={6} md={2}>
             <TextField
               label="Cuenta (accountCode)"
@@ -317,6 +347,7 @@ export default function AuditSection() {
               fullWidth
             />
           </Grid>
+
           <Grid item xs={6} md={2}>
             <TextField
               label="Moneda"
@@ -326,6 +357,7 @@ export default function AuditSection() {
               fullWidth
             />
           </Grid>
+
           <Grid item xs={6} md={2}>
             <TextField
               label="Id Cobrador"
@@ -336,6 +368,7 @@ export default function AuditSection() {
               fullWidth
             />
           </Grid>
+
           <Grid item xs={6} md={2}>
             <TextField
               label="Id Cliente"
@@ -344,6 +377,7 @@ export default function AuditSection() {
               fullWidth
             />
           </Grid>
+
           <Grid item xs={6} md={2}>
             <TextField
               label="Importe mín."
@@ -364,6 +398,7 @@ export default function AuditSection() {
               fullWidth
             />
           </Grid>
+
           <Grid item xs={6} md={2}>
             <TextField
               label="Método (payment)"
@@ -373,6 +408,7 @@ export default function AuditSection() {
               fullWidth
             />
           </Grid>
+
           <Grid item xs={6} md={2}>
             <TextField
               label="Estado (payment)"
@@ -382,15 +418,18 @@ export default function AuditSection() {
               fullWidth
             />
           </Grid>
+
+          {/* filtro por userId (Mongo) */}
           <Grid item xs={12} md={4}>
             <TextField
-              label="UserId (Mongo) – ejecutor"
+              label="UserId (Mongo) – actor del asiento"
               value={userId}
               onChange={(e) => setUserId(e.target.value.trim())}
               placeholder="653b... (opcional)"
               fullWidth
             />
           </Grid>
+
           <Grid item xs={12} md="auto">
             <Stack direction="row" spacing={1} sx={{ height: "100%" }}>
               <Button
@@ -426,9 +465,28 @@ export default function AuditSection() {
             </Stack>
           </Grid>
         </Grid>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Toggles de vista */}
+        <Stack direction="row" spacing={2} alignItems="center">
+          <FormControlLabel
+            control={
+              <Switch
+                checked={showCounterparty}
+                onChange={(_, v) => setShowCounterparty(v)}
+              />
+            }
+            label="Mostrar columnas De → A (contrapartida)"
+          />
+          <FormControlLabel
+            control={<Switch checked={dense} onChange={(_, v) => setDense(v)} />}
+            label="Tabla compacta"
+          />
+        </Stack>
       </Paper>
 
-      {/* Stats */}
+      {/* Totales / Stats */}
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
           <Typography variant="subtitle1" fontWeight={700}>
@@ -438,24 +496,24 @@ export default function AuditSection() {
             <InfoOutlined fontSize="small" />
           </Tooltip>
         </Stack>
+
         <Stack direction="row" flexWrap="wrap" gap={1}>
-          {Object.keys(stats).length === 0 ? (
+          {Object.keys(stats).length === 0 && (
             <Typography variant="body2" color="text.secondary">
               No hay datos para los filtros actuales.
             </Typography>
-          ) : (
-            Object.entries(stats).map(([cur, s]) => (
-              <Chip
-                key={cur}
-                label={`${cur} • Débito ${fmtAmount(
-                  s.debit
-                )} | Crédito ${fmtAmount(s.credit)} | Neto ${fmtAmount(
-                  s.net
-                )} (${s.lines} líneas)`}
-                variant="outlined"
-              />
-            ))
           )}
+          {Object.entries(stats).map(([cur, s]) => (
+            <Chip
+              key={cur}
+              label={`${cur} • Débito ${fmtAmount(
+                s.debit
+              )} | Crédito ${fmtAmount(s.credit)} | Neto ${fmtAmount(s.net)} (${
+                s.lines
+              } líneas)`}
+              variant="outlined"
+            />
+          ))}
         </Stack>
       </Paper>
 
@@ -467,7 +525,7 @@ export default function AuditSection() {
           </Box>
         ) : (
           <>
-            <Table size="small" stickyHeader>
+            <Table size={dense ? "small" : "medium"} stickyHeader>
               <TableHead>
                 <TableRow>
                   <TableCell
@@ -481,6 +539,7 @@ export default function AuditSection() {
                         : "▼"
                       : ""}
                   </TableCell>
+
                   <TableCell
                     onClick={() => onChangeSort("side")}
                     sx={{ cursor: "pointer" }}
@@ -488,6 +547,7 @@ export default function AuditSection() {
                     Lado{" "}
                     {sortBy === "side" ? (sortDir === "asc" ? "▲" : "▼") : ""}
                   </TableCell>
+
                   <TableCell
                     onClick={() => onChangeSort("accountCode")}
                     sx={{ cursor: "pointer" }}
@@ -499,28 +559,34 @@ export default function AuditSection() {
                         : "▼"
                       : ""}
                   </TableCell>
-                  <TableCell
-                    onClick={() => onChangeSort("fromUserName")}
-                    sx={{ cursor: "pointer" }}
-                  >
-                    De usuario{" "}
-                    {sortBy === "fromUserName"
-                      ? sortDir === "asc"
-                        ? "▲"
-                        : "▼"
-                      : ""}
-                  </TableCell>
-                  <TableCell
-                    onClick={() => onChangeSort("toUserName")}
-                    sx={{ cursor: "pointer" }}
-                  >
-                    A usuario{" "}
-                    {sortBy === "toUserName"
-                      ? sortDir === "asc"
-                        ? "▲"
-                        : "▼"
-                      : ""}
-                  </TableCell>
+
+                  {showCounterparty && (
+                    <>
+                      <TableCell
+                        onClick={() => onChangeSort("fromUser")}
+                        sx={{ cursor: "pointer" }}
+                      >
+                        De usuario{" "}
+                        {sortBy === "fromUser"
+                          ? sortDir === "asc"
+                            ? "▲"
+                            : "▼"
+                          : ""}
+                      </TableCell>
+                      <TableCell
+                        onClick={() => onChangeSort("toUser")}
+                        sx={{ cursor: "pointer" }}
+                      >
+                        A usuario{" "}
+                        {sortBy === "toUser"
+                          ? sortDir === "asc"
+                            ? "▲"
+                            : "▼"
+                          : ""}
+                      </TableCell>
+                    </>
+                  )}
+
                   <TableCell
                     align="right"
                     onClick={() => onChangeSort("amount")}
@@ -529,7 +595,9 @@ export default function AuditSection() {
                     Importe{" "}
                     {sortBy === "amount" ? (sortDir === "asc" ? "▲" : "▼") : ""}
                   </TableCell>
+
                   <TableCell>Moneda</TableCell>
+
                   <TableCell
                     onClick={() => onChangeSort("dimensions.idCobrador")}
                     sx={{ cursor: "pointer" }}
@@ -541,6 +609,7 @@ export default function AuditSection() {
                         : "▼"
                       : ""}
                   </TableCell>
+
                   <TableCell
                     onClick={() => onChangeSort("dimensions.idCliente")}
                     sx={{ cursor: "pointer" }}
@@ -552,8 +621,10 @@ export default function AuditSection() {
                         : "▼"
                       : ""}
                   </TableCell>
+
                   {includePayment && <TableCell>Método</TableCell>}
                   {includePayment && <TableCell>Estado</TableCell>}
+
                   <TableCell>Refs</TableCell>
                 </TableRow>
               </TableHead>
@@ -561,7 +632,7 @@ export default function AuditSection() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={visibleCols}>
+                    <TableCell colSpan={colSpan}>
                       <Stack
                         direction="row"
                         alignItems="center"
@@ -577,7 +648,7 @@ export default function AuditSection() {
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={visibleCols}>
+                    <TableCell colSpan={colSpan}>
                       <Typography variant="body2" color="text.secondary">
                         Sin resultados.
                       </Typography>
@@ -587,6 +658,7 @@ export default function AuditSection() {
                   items.map((row) => (
                     <TableRow key={row._id}>
                       <TableCell>{fmtDateTime(row.postedAt)}</TableCell>
+
                       <TableCell>
                         {row.side === "debit" ? (
                           <Chip
@@ -604,6 +676,7 @@ export default function AuditSection() {
                           />
                         )}
                       </TableCell>
+
                       <TableCell>
                         <Stack direction="row" alignItems="center" spacing={1}>
                           <Typography variant="body2" fontWeight={600}>
@@ -616,8 +689,14 @@ export default function AuditSection() {
                           )}
                         </Stack>
                       </TableCell>
-                      <TableCell>{row.fromUserName || "—"}</TableCell>
-                      <TableCell>{row.toUserName || "—"}</TableCell>
+
+                      {showCounterparty && (
+                        <>
+                          <TableCell>{row.fromUser || "—"}</TableCell>
+                          <TableCell>{row.toUser || "—"}</TableCell>
+                        </>
+                      )}
+
                       <TableCell align="right">
                         <Typography
                           variant="body2"
@@ -629,23 +708,20 @@ export default function AuditSection() {
                           {fmtAmount(row.amount)}
                         </Typography>
                       </TableCell>
+
                       <TableCell>{row.currency || "-"}</TableCell>
-                      <TableCell>
-                        {row?.dimensions?.idCobrador ?? "-"}
-                      </TableCell>
+                      <TableCell>{row?.dimensions?.idCobrador ?? "-"}</TableCell>
                       <TableCell>{row?.dimensions?.idCliente ?? "-"}</TableCell>
+
                       {includePayment && (
                         <TableCell>{row?.payment?.method ?? "-"}</TableCell>
                       )}
                       {includePayment && (
                         <TableCell>{row?.payment?.status ?? "-"}</TableCell>
                       )}
+
                       <TableCell>
-                        <Stack
-                          direction="row"
-                          spacing={0.5}
-                          alignItems="center"
-                        >
+                        <Stack direction="row" spacing={0.5} alignItems="center">
                           <Typography variant="caption" color="text.secondary">
                             {row.paymentId
                               ? String(row.paymentId).slice(0, 6) + "…"
@@ -693,6 +769,7 @@ export default function AuditSection() {
                       </MenuItem>
                     ))}
                   </TextField>
+
                   <TextField
                     select
                     size="small"
@@ -709,6 +786,7 @@ export default function AuditSection() {
                   </TextField>
                 </Stack>
               </Grid>
+
               <Grid item xs={12} md={6}>
                 <TablePagination
                   component="div"
