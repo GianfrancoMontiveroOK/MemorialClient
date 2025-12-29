@@ -71,7 +71,7 @@ export default function CollectorResumenSection() {
   }, []);
 
   // Derivados cómodos
-  const assigned = stats?.assignedClients ?? null;
+  const assigned = stats?.month?.assignedClients ?? null;
   const clientsWithPayment = stats?.month?.clientsWithPayment ?? null;
   const clientsWithoutPayment =
     assigned != null && clientsWithPayment != null

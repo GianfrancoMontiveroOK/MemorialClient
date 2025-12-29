@@ -34,7 +34,7 @@ export default function CollectorPanel() {
     try {
       setSavingPay(true);
       setPayError("");
-      await createPayment(client, payload);
+      await createPayment(client.idCliente, payload);
       closeCobro();
     } catch (e) {
       setPayError(
