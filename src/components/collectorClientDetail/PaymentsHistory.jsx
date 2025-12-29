@@ -119,26 +119,6 @@ export default function PaymentsHistory({ clientId }) {
           >
             Historial de pagos
           </Typography>
-
-          <Box sx={{ flex: 1, width: "100%" }}>
-            <TextField
-              size="small"
-              fullWidth
-              placeholder="Buscar pagos…"
-              value={q}
-              onChange={(e) => {
-                setPage(0);
-                setQ(e.target.value);
-              }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchRoundedIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              }}
-            />
-          </Box>
         </Stack>
       </Paper>
 

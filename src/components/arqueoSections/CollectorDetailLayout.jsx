@@ -1,3 +1,4 @@
+// src/components/arqueoSections/CollectorDetailLayout.jsx
 import * as React from "react";
 import {
   Box,
@@ -21,11 +22,17 @@ export default function CollectorDetailLayout({
   anyLoading,
   onBack,
   onRefresh,
-  onArquearCaja,
+  onArquearCaja, // ✅ lo recibimos desde CollectorDetailSection
+  // (si después querés, podés volver a pasar onExport y agregar el botón acá)
   toast,
   setToast,
   children,
 }) {
+  const canArquear =
+    tab === "caja" &&
+    typeof onArquearCaja === "function" &&
+    (user?.userId !== undefined && user?.userId !== null && String(user?.userId) !== "");
+
   return (
     <Box>
       <Stack
@@ -56,7 +63,20 @@ export default function CollectorDetailLayout({
           </Typography>
         </Stack>
 
-        <Stack direction="row" spacing={1}>
+        {/* ✅ Acciones arriba a la derecha */}
+        <Stack direction="row" spacing={1} flexWrap="wrap">
+          {canArquear && (
+            <Button
+              startIcon={<ContentCutRoundedIcon />}
+              variant="contained"
+              color="warning"
+              onClick={onArquearCaja}
+              disabled={anyLoading}
+            >
+              Arquear caja
+            </Button>
+          )}
+
           <Button
             startIcon={<RefreshRoundedIcon />}
             onClick={onRefresh}
@@ -93,6 +113,7 @@ export default function CollectorDetailLayout({
         open={toast.open}
         autoHideDuration={4000}
         onClose={() => setToast((t) => ({ ...t, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
         <Alert
           onClose={() => setToast((t) => ({ ...t, open: false }))}

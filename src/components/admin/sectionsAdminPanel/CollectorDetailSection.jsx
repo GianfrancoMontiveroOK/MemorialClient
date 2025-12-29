@@ -1,8 +1,24 @@
 // src/components/admin/sectionsAdminPanel/CollectorDetailSection.jsx
 import * as React from "react";
-import { Box, Grid } from "@mui/material";
+import {
+  Box,
+  Grid,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  Typography,
+  Divider,
+  Stack,
+  Alert,
+  Chip,
+  CircularProgress,
+} from "@mui/material";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
+
 
 import {
   CollectorDetailLayout,
@@ -12,7 +28,7 @@ import {
   PaymentsTable,
   ClientsFilters,
   ClientsTable,
-  CollectorCommissionSection, // ⬅️ NUEVO
+  CollectorCommissionSection,
   fmtMoney,
   sumTotals,
 } from "../../arqueoSections";
@@ -49,6 +65,7 @@ export default function CollectorDetailSection({
     credits: 0,
     balance: 0,
   });
+  const [cashTotalsFromApi, setCashTotalsFromApi] = React.useState(false);
   const [cashItems, setCashItems] = React.useState([]);
   const [cashTotal, setCashTotal] = React.useState(0);
   const [cashPage, setCashPage] = React.useState(0);
@@ -77,6 +94,11 @@ export default function CollectorDetailSection({
     msg: "",
     sev: "success",
   });
+
+  // modal arqueo
+  const [arqueoOpen, setArqueoOpen] = React.useState(false);
+  const [arqueoNote, setArqueoNote] = React.useState("");
+  const [arqueoSubmitting, setArqueoSubmitting] = React.useState(false);
 
   const totalCashPages = Math.max(
     1,
@@ -110,6 +132,8 @@ export default function CollectorDetailSection({
       const items = data?.items || [];
       const totalsApi = data?.totals;
       const totals = totalsApi || sumTotals(items);
+
+      setCashTotalsFromApi(Boolean(totalsApi));
 
       setCashTotals({
         debits: Number(totals.debits || 0),
@@ -320,21 +344,35 @@ export default function CollectorDetailSection({
     return exportLocalCSV();
   };
 
-  const onArquearCaja = async () => {
+  const anyLoading = cashLoading || payLoading || cliLoading;
+
+  // Abrir modal (esto se dispara desde el botón en el header)
+  const onArquearCaja = () => {
     if (!userIdOk) return;
-    const note = window.prompt("Nota opcional para el arqueo:", "") || "";
+    // aseguramos que el resumen esté actualizado antes de confirmar
+    if (tab === "caja") reloadCash();
+    setArqueoNote("");
+    setArqueoOpen(true);
+  };
+
+  const submitArqueo = async () => {
+    if (!userIdOk) return;
+    if (arqueoSubmitting) return;
+
+    setArqueoSubmitting(true);
     try {
       await crearArqueoUsuario({
         userId,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
-        note,
+        note: (arqueoNote || "").trim(),
       });
       setToast({
         open: true,
         msg: "Arqueo realizado correctamente.",
         sev: "success",
       });
+      setArqueoOpen(false);
       await reloadCash();
     } catch (e) {
       console.error(e);
@@ -346,10 +384,19 @@ export default function CollectorDetailSection({
           "No se pudo realizar el arqueo",
         sev: "error",
       });
+    } finally {
+      setArqueoSubmitting(false);
     }
   };
 
-  const anyLoading = cashLoading || payLoading || cliLoading;
+  const periodLabel = () => {
+    const from = (dateFrom || "").trim();
+    const to = (dateTo || "").trim();
+    if (!from && !to) return "Sin filtro de fechas";
+    if (from && to) return `${from} → ${to}`;
+    if (from) return `Desde ${from}`;
+    return `Hasta ${to}`;
+  };
 
   return (
     <>
@@ -365,7 +412,7 @@ export default function CollectorDetailSection({
           else reloadClients();
         }}
         onExport={onExportTop}
-        onArquearCaja={onArquearCaja}
+        onArquearCaja={onArquearCaja} // ✅ ahora abre modal
         toast={toast}
         setToast={setToast}
       >
@@ -389,7 +436,6 @@ export default function CollectorDetailSection({
 
         {tab === "caja" && (
           <>
-            {/* 🔹 Bloque compartido de comisión, reutilizando CollectorCommissionSection */}
             <CollectorCommissionSection
               user={user}
               dateFrom={dateFrom || undefined}
@@ -484,6 +530,110 @@ export default function CollectorDetailSection({
           </>
         )}
       </CollectorDetailLayout>
+
+      {/* ===================== MODAL ARQUEO ===================== */}
+      <Dialog
+        open={arqueoOpen}
+        onClose={() => {
+          if (arqueoSubmitting) return;
+          setArqueoOpen(false);
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Arqueo de caja</DialogTitle>
+
+        <DialogContent dividers>
+          <Stack spacing={1.25}>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+              <Typography variant="body2" color="text.secondary">
+                Cobrador:
+              </Typography>
+              <Chip
+                size="small"
+                label={
+                  user?.name
+                    ? `${user?.name} (${userId})`
+                    : `ID cobrador: ${userId}`
+                }
+              />
+              <Chip size="small" variant="outlined" label={periodLabel()} />
+            </Stack>
+
+            <Divider />
+
+            <Typography variant="subtitle2" sx={{ mb: 0.25 }}>
+              Resumen según filtros actuales
+            </Typography>
+
+            <Grid container spacing={1}>
+              <Grid item xs={12} sm={4}>
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    Ingresos
+                  </Typography>
+                  <Typography variant="h6">{fmtMoney(cashTotals.debits)}</Typography>
+                </Stack>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    Egresos
+                  </Typography>
+                  <Typography variant="h6">{fmtMoney(cashTotals.credits)}</Typography>
+                </Stack>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    Saldo (a contabilizar)
+                  </Typography>
+                  <Typography variant="h6">{fmtMoney(cashTotals.balance)}</Typography>
+                </Stack>
+              </Grid>
+            </Grid>
+
+            <Alert severity={cashTotalsFromApi ? "info" : "warning"}>
+              {cashTotalsFromApi
+                ? "Estos totales vienen del backend (incluyen todo el rango filtrado)."
+                : "Estos totales se calcularon desde los ítems cargados en pantalla (pueden no representar el total real si hay paginación)."}
+            </Alert>
+
+            <TextField
+              label="Nota (opcional)"
+              placeholder="Ej: Arqueo fin de turno, faltante de cambio, etc."
+              value={arqueoNote}
+              onChange={(e) => setArqueoNote(e.target.value)}
+              fullWidth
+              multiline
+              minRows={3}
+              disabled={arqueoSubmitting}
+            />
+          </Stack>
+        </DialogContent>
+
+        <DialogActions sx={{ px: 2, py: 1.5 }}>
+          <Button
+            onClick={() => setArqueoOpen(false)}
+            disabled={arqueoSubmitting}
+          >
+            Cancelar
+          </Button>
+
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={submitArqueo}
+            disabled={arqueoSubmitting || anyLoading || !userIdOk}
+            startIcon={
+              arqueoSubmitting ? <CircularProgress size={18} /> : undefined
+            }
+          >
+            Confirmar arqueo
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }
+

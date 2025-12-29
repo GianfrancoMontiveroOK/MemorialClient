@@ -24,6 +24,7 @@ import {
   Tooltip,
   Chip,
   Stack,
+  Alert,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -49,6 +50,8 @@ const fmtMoney = (n) =>
     : "—";
 
 const digits = (s = "") => String(s).replace(/\D+/g, "");
+const onlyDigits = (s = "") => String(s).replace(/\D+/g, "");
+
 const buildAddress = (r) =>
   [r?.domicilio, r?.ciudad, r?.provincia, r?.cp].filter(Boolean).join(", ");
 
@@ -106,9 +109,7 @@ function BillingChip({ billing }) {
   return (
     <Tooltip
       title={
-        billing.lastPaidPeriod
-          ? `Último pago: ${billing.lastPaidPeriod}`
-          : "Al día"
+        billing.lastPaidPeriod ? `Último pago: ${billing.lastPaidPeriod}` : "Al día"
       }
     >
       <Chip size="small" color="success" label="Al día" />
@@ -129,20 +130,9 @@ function MobileClientCard({
     row?.cuotaVigente ?? (row?.usarCuotaIdeal ? row?.cuotaIdeal : row?.cuota);
 
   return (
-    <Paper
-      variant="outlined"
-      sx={{
-        borderRadius: 2,
-        p: 1.5,
-        mb: 1,
-      }}
-    >
+    <Paper variant="outlined" sx={{ borderRadius: 2, p: 1.5, mb: 1 }}>
       <Stack spacing={0.75}>
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-        >
+        <Stack direction="row" alignItems="center" justifyContent="space-between">
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
             {row.nombre ?? "—"}
           </Typography>
@@ -169,12 +159,7 @@ function MobileClientCard({
           {buildAddress(row) || "Sin dirección"}
         </Typography>
 
-        <Stack
-          direction="row"
-          spacing={0.5}
-          justifyContent="flex-end"
-          sx={{ mt: 0.5 }}
-        >
+        <Stack direction="row" spacing={0.5} justifyContent="flex-end" sx={{ mt: 0.5 }}>
           <Tooltip title="Copiar dirección">
             <span>
               <IconButton size="small" onClick={() => onCopyAddress(row)}>
@@ -214,10 +199,6 @@ function MobileClientCard({
   );
 }
 
-/* ---------- Tabla principal ---------- */
-
-const onlyDigits = (s = "") => String(s).replace(/\D+/g, "");
-
 export default function CollectorClientsTable() {
   const navigate = useNavigate();
   const {
@@ -250,6 +231,7 @@ export default function CollectorClientsTable() {
     byIdCliente: undefined,
     byDocumento: undefined,
   });
+
   const searchRef = useRef(null);
   const debounceRef = useRef(null);
 
@@ -285,7 +267,7 @@ export default function CollectorClientsTable() {
     // Solo dígitos
     if (/^\d+$/.test(v)) {
       if (v.length >= 6) {
-        // Ambiguo, por defecto DNI
+        // Ambiguo: por defecto DNI (si quieren idCliente largo, que usen #123 o id:123)
         return { q: "", byIdCliente: undefined, byDocumento: v };
       }
       // Cortos → idCliente
@@ -341,28 +323,35 @@ export default function CollectorClientsTable() {
     };
   }, [load, ctxId]);
 
-  // ⌛ debounce search
+  // ✅ debounce search FIX (sin activeQuery stale)
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+
     debounceRef.current = setTimeout(() => {
       const parsed = parseSearch(searchText);
-      const changed =
-        parsed.q !== activeQuery.q ||
-        parsed.byIdCliente !== activeQuery.byIdCliente ||
-        parsed.byDocumento !== activeQuery.byDocumento;
-      if (changed) {
-        setActiveQuery(parsed);
-        setPage(0);
-      }
+
+      setActiveQuery((prev) => {
+        const changed =
+          parsed.q !== prev.q ||
+          parsed.byIdCliente !== prev.byIdCliente ||
+          parsed.byDocumento !== prev.byDocumento;
+
+        if (changed) setPage(0);
+        return changed ? parsed : prev;
+      });
     }, 350);
-    return () => clearTimeout(debounceRef.current);
-  }, [searchText, parseSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchText, parseSearch]);
 
   const handleRefresh = () => load();
   const handleToggleSort = () => {
     setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     setPage(0);
   };
+
   const handleView = (r) =>
     navigate(`/app/collectorClientDetail/${r._id || r.id}`);
 
@@ -371,6 +360,7 @@ export default function CollectorClientsTable() {
     if (!addr) return;
     navigator.clipboard?.writeText(addr).catch(() => {});
   };
+
   const openMaps = (r) => {
     const addr = buildAddress(r);
     if (!addr) return;
@@ -379,17 +369,18 @@ export default function CollectorClientsTable() {
     )}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
+
   const openWhatsApp = (r) => {
     const phone = digits(r?.telefono || "");
     if (!phone) return;
     const cuotaVig =
       r?.cuotaVigente ?? (r?.usarCuotaIdeal ? r?.cuotaIdeal : r?.cuota) ?? 0;
+
     const msg =
       `Hola ${r?.nombre?.split(" ")[0] || ""}, te escribe *Memorial*.\n` +
-      `Tengo registrada tu cuota vigente de *${fmtMoney(
-        Number(cuotaVig)
-      )}*.\n` +
+      `Tengo registrada tu cuota vigente de *${fmtMoney(Number(cuotaVig))}*.\n` +
       `¿Coordinamos el cobro a domicilio? (Cliente #${r?.idCliente ?? "—"}).`;
+
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
@@ -432,6 +423,13 @@ export default function CollectorClientsTable() {
     (activeQuery.q && activeQuery.q.length > 0) ||
     activeQuery.byIdCliente !== undefined ||
     activeQuery.byDocumento !== undefined;
+
+  const clearSearch = () => {
+    setSearchText("");
+    setActiveQuery({ q: "", byIdCliente: undefined, byDocumento: undefined });
+    setPage(0);
+    searchRef.current?.focus?.();
+  };
 
   return (
     <Paper elevation={0} sx={{ borderRadius: 2, overflow: "hidden" }}>
@@ -506,9 +504,7 @@ export default function CollectorClientsTable() {
             inputRef={searchRef}
             placeholder='Buscar por nombre, N° cliente o DNI… (ej: "dni 30.123.456", "#123", "30123456")'
             value={searchText}
-            onChange={(e) => {
-              setSearchText(e.target.value);
-            }}
+            onChange={(e) => setSearchText(e.target.value)}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -518,18 +514,7 @@ export default function CollectorClientsTable() {
               endAdornment: searchText ? (
                 <InputAdornment position="end">
                   <Tooltip title="Limpiar">
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        setSearchText("");
-                        setActiveQuery({
-                          q: "",
-                          byIdCliente: undefined,
-                          byDocumento: undefined,
-                        });
-                        setPage(0);
-                      }}
-                    >
+                    <IconButton size="small" onClick={clearSearch}>
                       <CloseRoundedIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
@@ -537,6 +522,7 @@ export default function CollectorClientsTable() {
               ) : null,
             }}
           />
+
           {hasFilter && (
             <Box mt={0.5}>
               {activeQuery.byDocumento !== undefined ? (
@@ -544,15 +530,7 @@ export default function CollectorClientsTable() {
                   size="small"
                   variant="outlined"
                   label={`DNI: ${activeQuery.byDocumento}`}
-                  onDelete={() => {
-                    setSearchText("");
-                    setActiveQuery({
-                      q: "",
-                      byIdCliente: undefined,
-                      byDocumento: undefined,
-                    });
-                    setPage(0);
-                  }}
+                  onDelete={clearSearch}
                   sx={{ mr: 0.5 }}
                 />
               ) : activeQuery.byIdCliente !== undefined ? (
@@ -560,15 +538,7 @@ export default function CollectorClientsTable() {
                   size="small"
                   variant="outlined"
                   label={`N° cliente: ${activeQuery.byIdCliente}`}
-                  onDelete={() => {
-                    setSearchText("");
-                    setActiveQuery({
-                      q: "",
-                      byIdCliente: undefined,
-                      byDocumento: undefined,
-                    });
-                    setPage(0);
-                  }}
+                  onDelete={clearSearch}
                   sx={{ mr: 0.5 }}
                 />
               ) : activeQuery.q ? (
@@ -576,15 +546,7 @@ export default function CollectorClientsTable() {
                   size="small"
                   variant="outlined"
                   label={`Búsqueda: “${activeQuery.q}”`}
-                  onDelete={() => {
-                    setSearchText("");
-                    setActiveQuery({
-                      q: "",
-                      byIdCliente: undefined,
-                      byDocumento: undefined,
-                    });
-                    setPage(0);
-                  }}
+                  onDelete={clearSearch}
                   sx={{ mr: 0.5 }}
                 />
               ) : null}
@@ -680,6 +642,16 @@ export default function CollectorClientsTable() {
         </Box>
       </Toolbar>
 
+      {/* Mensaje si hay filtro de estado y búsqueda server-side: aclaración opcional */}
+      {statusFilter !== "all" && hasFilter ? (
+        <Box px={1.5} pb={1}>
+          <Alert severity="info" sx={{ borderRadius: 2 }}>
+            Nota: el buscador filtra en servidor (por páginas) y el chip de estado filtra
+            localmente sobre la página actual.
+          </Alert>
+        </Box>
+      ) : null}
+
       {/* LISTA MOBILE */}
       {isMobile && (
         <Box sx={{ px: 1.5, pb: 1.5 }}>
@@ -733,73 +705,53 @@ export default function CollectorClientsTable() {
 
               <TableBody>
                 {visibleRows.length > 0 ? (
-                  visibleRows.map((r) => {
-                    return (
-                      <TableRow hover key={r.id || r._id || r.idCliente}>
-                        <TableCell>{r.idCliente ?? "—"}</TableCell>
-                        <TableCell>{r.nombre ?? "—"}</TableCell>
-                        <TableCell>{buildAddress(r) || "—"}</TableCell>
+                  visibleRows.map((r) => (
+                    <TableRow hover key={r.id || r._id || r.idCliente}>
+                      <TableCell>{r.idCliente ?? "—"}</TableCell>
+                      <TableCell>{r.nombre ?? "—"}</TableCell>
+                      <TableCell>{buildAddress(r) || "—"}</TableCell>
 
-                        <TableCell>
-                          <BillingChip billing={r.billing} />
-                        </TableCell>
+                      <TableCell>
+                        <BillingChip billing={r.billing} />
+                      </TableCell>
 
-                        <TableCell
-                          align="right"
-                          style={{ whiteSpace: "nowrap" }}
-                        >
-                          <Tooltip title="Copiar dirección">
-                            <span>
-                              <IconButton
-                                size="small"
-                                onClick={() => copyAddress(r)}
-                              >
-                                <ContentCopyIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                          <Tooltip title="Abrir en Maps">
-                            <span>
-                              <IconButton
-                                size="small"
-                                onClick={() => openMaps(r)}
-                              >
-                                <MapIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                          <Tooltip
-                            title={
-                              digits(r?.telefono || "")
-                                ? "WhatsApp"
-                                : "Sin teléfono"
-                            }
-                          >
-                            <span>
-                              <IconButton
-                                size="small"
-                                color="success"
-                                onClick={() => openWhatsApp(r)}
-                                disabled={!digits(r?.telefono || "")}
-                              >
-                                <WhatsAppIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                          <Tooltip title="Ver ficha">
-                            <span>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleView(r)}
-                              >
-                                <VisibilityIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
+                      <TableCell align="right" style={{ whiteSpace: "nowrap" }}>
+                        <Tooltip title="Copiar dirección">
+                          <span>
+                            <IconButton size="small" onClick={() => copyAddress(r)}>
+                              <ContentCopyIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="Abrir en Maps">
+                          <span>
+                            <IconButton size="small" onClick={() => openMaps(r)}>
+                              <MapIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title={digits(r?.telefono || "") ? "WhatsApp" : "Sin teléfono"}>
+                          <span>
+                            <IconButton
+                              size="small"
+                              color="success"
+                              onClick={() => openWhatsApp(r)}
+                              disabled={!digits(r?.telefono || "")}
+                            >
+                              <WhatsAppIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="Ver ficha">
+                          <span>
+                            <IconButton size="small" onClick={() => handleView(r)}>
+                              <VisibilityIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))
                 ) : loading ? (
                   <TableRow>
                     <TableCell colSpan={5} align="center">

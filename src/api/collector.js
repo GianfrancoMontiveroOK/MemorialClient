@@ -8,37 +8,50 @@ const noStoreHeaders = { "Cache-Control": "no-cache" };
  * LISTAR clientes asignados al cobrador autenticado.
  * GET /collector/clientes
  *
- * Modo recomendado (sin paginación): usar `full=1` para traer todo y paginar/filtrar en UI.
+ * Soporta búsqueda avanzada si el backend lo implementa:
+ *  - byIdCliente
+ *  - byDocumento
+ *  - q (texto libre)
  *
  * @param {Object} params
- * @param {1|0|boolean} [params.full=1]         Si es truthy, el backend ignora page/limit y devuelve TODO.
- * @param {number} [params.page=1]              Paginación 1-based (solo si full es falsy)
- * @param {number} [params.limit=10]            Tamaño de página (solo si full es falsy)
- * @param {string} [params.q=""]                Búsqueda (nombre, idCliente, domicilio, cp)
- * @param {string} [params.sortBy="createdAt"]  Campo de orden
- *   Valores comunes: "createdAt" | "idCliente" | "nombre" | "ingreso" | "cuota" | "cuotaIdeal" | "updatedAt"
+ * @param {1|0|boolean} [params.full]            Si es truthy, el backend puede ignorar page/limit y devolver TODO.
+ * @param {number} [params.page=1]               Paginación 1-based
+ * @param {number} [params.limit=50]             Tamaño de página
+ * @param {string} [params.q=""]                 Búsqueda libre
+ * @param {number} [params.byIdCliente]          Filtro por N° cliente (grupo)
+ * @param {string} [params.byDocumento]          Filtro por documento/DNI (idealmente busca por grupo)
+ * @param {string} [params.sortBy="createdAt"]   Campo de orden
  * @param {"asc"|"desc"} [params.sortDir="desc"] Dirección
- * @param {string|number} [params.idCobrador]   (Opcional) forzar idCobrador; normalmente viene de la sesión
+ * @param {string|number} [params.idCobrador]    (Opcional) forzar idCobrador; normalmente viene de la sesión
  */
 export const listCollectorClients = ({
+  full,
   page = 1,
-  limit = 50, // o 100 / 200, lo que quieras como máximo razonable
+  limit = 50,
   q = "",
   sortBy = "createdAt",
   sortDir = "desc",
   idCobrador,
+  ...rest // ✅ IMPORTANTÍSIMO: deja pasar byDocumento/byIdCliente/etc.
 } = {}) => {
   const params = {
-    page,
-    limit,
-    q: String(q || "").trim(),
     sortBy,
     sortDir,
+    ...rest,
   };
 
-  if (idCobrador != null) {
-    params.idCobrador = idCobrador;
+  // Si usás modo "full", lo mandamos y dejamos que el backend decida ignorar page/limit
+  if (full) {
+    params.full = 1;
+  } else {
+    params.page = page;
+    params.limit = limit;
   }
+
+  // normalizo q si viene
+  if (q != null) params.q = String(q || "").trim();
+
+  if (idCobrador != null) params.idCobrador = idCobrador;
 
   return axios.get("/collector/clientes", {
     params,
@@ -48,10 +61,8 @@ export const listCollectorClients = ({
 };
 
 /**
- * DETALLE de un cliente (miembro) para cobrador (incluye grupo, proyección segura)
+ * DETALLE de un cliente (miembro) para cobrador
  * GET /collector/clientes/:id
- *
- * @param {string} id - _id de Mongo del miembro (titular o integrante)
  */
 export const getCollectorClientById = (id) =>
   axios.get(`/collector/clientes/${id}`, {
@@ -62,12 +73,6 @@ export const getCollectorClientById = (id) =>
 /**
  * ESTADO DE DEUDA por períodos (MVP)
  * GET /collector/clientes/:id/deuda
- *
- * @param {string} id - _id de Mongo del miembro (requerido)
- * @param {Object} [params]
- * @param {string} [params.from]         Periodo inicial "YYYY-MM" (default: hace ~12 meses)
- * @param {string} [params.to]           Periodo final "YYYY-MM"   (default: mes actual)
- * @param {number} [params.includeFuture=1]  Cantidad de períodos futuros a proyectar
  */
 export const getCollectorClientDebt = (id, params = {}) =>
   axios.get(`/collector/clientes/${id}/deuda`, {
@@ -79,18 +84,6 @@ export const getCollectorClientDebt = (id, params = {}) =>
 /**
  * LISTAR PAGOS del cobrador.
  * GET /collector/pagos
- *
- * @param {Object} params
- * @param {number} [params.page=1]
- * @param {number} [params.limit=25]
- * @param {string} [params.q]                 Búsqueda (nombre, idCliente, nro de recibo, externalRef)
- * @param {string} [params.dateFrom]          "YYYY-MM-DD"
- * @param {string} [params.dateTo]            "YYYY-MM-DD"
- * @param {string} [params.clientId]          _id Mongo del miembro
- * @param {string} [params.method]            "efectivo"|"transferencia"|"tarjeta"|"qr"|"otro"
- * @param {string} [params.status]            "draft"|"posted"|"settled"|"reversed"
- * @param {string} [params.sortBy="postedAt"] Campo de orden
- * @param {"asc"|"desc"} [params.sortDir="desc"]
  */
 export const listCollectorPayments = ({
   page = 1,
@@ -120,19 +113,7 @@ export const listCollectorPayments = ({
 };
 
 /**
- * LISTAR RECIBOS del cobrador (filtrable por cliente).
- * Intentará primero /collector/receipts; si el backend aún no lo expone,
- * hace fallback a /adminReceipts/receipts con los mismos parámetros.
- *
- * @param {Object} params
- * @param {number} [params.page=1]
- * @param {number} [params.limit=10]
- * @param {string} [params.q]
- * @param {string} [params.dateFrom]     "YYYY-MM-DD"
- * @param {string} [params.dateTo]       "YYYY-MM-DD"
- * @param {string} [params.clientId]     _id Mongo del miembro
- * @param {string} [params.sortBy="createdAt"]
- * @param {"asc"|"desc"} [params.sortDir="desc"]
+ * LISTAR RECIBOS del cobrador (con fallback).
  */
 export const listCollectorReceipts = async ({
   page = 1,
@@ -157,7 +138,6 @@ export const listCollectorReceipts = async ({
       headers: noStoreHeaders,
     });
   } catch (err) {
-    // fallback transparente si aún no existe el endpoint de cobrador
     if (err?.response?.status === 404) {
       return axios.get("/adminReceipts/receipts", {
         params,
@@ -170,30 +150,8 @@ export const listCollectorReceipts = async ({
 };
 
 /**
- * CREAR PAGO (transaccional: Payment + Ledger + Receipt + Outbox)
+ * CREAR PAGO
  * POST /collector/pagos
- *
- * payload base:
- * {
- *   clienteId: string,                 // _id de Mongo del miembro (requerido)
- *   idCliente?: number,                // (opcional) validación cruzada con el grupo
- *   amount?: number,                   // > 0; si falta, usa cuotaVigente del miembro
- *   method: "efectivo"|"transferencia"|"tarjeta"|"qr"|"otro", // (requerido)
- *   idempotencyKey: string,            // clave única por intento (requerido)
- *   notes?: string,
- *   channel?: "field"|"backoffice"|"portal"|"api",
- *   intendedPeriod?: string,           // ej. "2025-10"
- *   geo?: { lat: number, lng: number },
- *   device?: string,
- *   ip?: string,
- *   externalRef?: string,              // id POS/MP/ERP si aplica
- *   cashSessionId?: string,            // si ya manejás sesiones de caja
- *   collectedAt?: string               // ISO; para forzar postedAt (opcional)
- * }
- *
- * Extensión ETAPA 1.2:
- *  - strategy?: "auto"|"manual" (default "auto")
- *  - breakdown?: Array<{ period: "YYYY-MM", amount: number }> (solo si strategy="manual")
  */
 export const createCollectorPayment = (payload) =>
   axios.post("/collector/pagos", payload, {
@@ -201,12 +159,13 @@ export const createCollectorPayment = (payload) =>
     headers: noStoreHeaders,
   });
 
-/*
-⚠️ No exponemos create/update/delete de clientes aquí porque el rol “cobrador”
-no debe modificar el CRM. Para acciones futuras (visitas/notas), usar endpoints
-específicos (p.ej. /collector/visitas, /collector/notas).
-*/
-// ../../api/collector.js (ejemplo)
+/**
+ * RESUMEN cobrador
+ * GET /collector/summary
+ */
 export async function getCollectorSummary() {
-  return axios.get("/collector/summary"); // usando tu instancia de axios
+  return axios.get("/collector/summary", {
+    withCredentials: true,
+    headers: noStoreHeaders,
+  });
 }

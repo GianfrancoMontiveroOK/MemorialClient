@@ -114,6 +114,14 @@ const toBool = (x) =>
     ? x
     : String(x).toLowerCase() === "true" || Number(x) === 1;
 
+// ✅ helpers para validar familiares activos (mismo criterio que Familiares.jsx)
+const isValidDate = (v) => {
+  if (!v) return false;
+  const t = new Date(String(v)).getTime();
+  return !Number.isNaN(t);
+};
+const isMemberActive = (m) => m?.activo !== false && !isValidDate(m?.baja);
+
 export default function ClienteForm() {
   const { id } = useParams();
   const isEdit = Boolean(id);
@@ -165,6 +173,7 @@ export default function ClienteForm() {
           cremacion: toBool(m?.cremacion),
           parcela: toBool(m?.parcela),
           activo: m?.activo !== false,
+          baja: toDateInput(m?.baja) || null,
         });
 
         // Set de valores del form (titular/integrante + familiares)
@@ -204,12 +213,13 @@ export default function ClienteForm() {
           // Fallback local (solo si el server no lo trajo)
           const titular = doc || {};
 
-          const isValidDate = (v) => {
+          const isValidDateLocal = (v) => {
             if (!v) return false;
             const d = v instanceof Date ? v : new Date(v);
             return !Number.isNaN(d.getTime());
           };
-          const isActive = (m) => m?.activo !== false && !isValidDate(m?.baja);
+          const isActive = (m) =>
+            m?.activo !== false && !isValidDateLocal(m?.baja);
           const ROL_ALLOWED = new Set(["TITULAR", "INTEGRANTE"]);
 
           const miembros = [titular, ...family]
@@ -263,8 +273,8 @@ export default function ClienteForm() {
     setValues((v) => ({ ...v, [field]: value }));
   };
 
-  // Integrantes (nuevo y edición)
-  const pushIntegrante = () =>
+  // ✅ Integrantes (nuevo y edición) -> acepta defaults desde Familiares.jsx
+  const pushIntegrante = (seed = {}) =>
     setValues((v) => ({
       ...v,
       integrantes: [
@@ -280,11 +290,14 @@ export default function ClienteForm() {
           telefono: "",
           domicilio: "",
           ciudad: "",
-          provincia: "",
+          provincia: "Mendoza",
           cp: "",
           observaciones: "",
           cremacion: false,
           parcela: false,
+          activo: true,
+          baja: null,
+          ...seed,
         },
       ],
     }));
@@ -305,10 +318,44 @@ export default function ClienteForm() {
       return { ...v, integrantes: arr };
     });
 
-  const canSubmit = useMemo(
-    () => String(values.nombre || "").trim() !== "",
-    [values.nombre]
-  );
+  // ✅ Validación familiares: si están activos, requieren nombre + fechaNac
+  const familyRequired = useMemo(() => {
+    const integrantes = Array.isArray(values.integrantes)
+      ? values.integrantes
+      : [];
+
+    const missing = integrantes
+      .map((m, idx) => {
+        if (!isMemberActive(m)) return null;
+
+        const miss = [];
+        if (!String(m?.nombre || "").trim()) miss.push("Nombre");
+        if (!isValidDate(m?.fechaNac)) miss.push("Fecha de nacimiento");
+
+        return miss.length ? { idx, miss } : null;
+      })
+      .filter(Boolean);
+
+    return { ok: missing.length === 0, missing };
+  }, [values.integrantes]);
+
+  // ✅ REQUERIDOS: titular (nombre + fechaNac + domicilio) + familiares activos (nombre + fechaNac)
+  const requiredState = useMemo(() => {
+    const missing = [];
+
+    const nombreOk = String(values.nombre || "").trim().length > 0;
+    const fechaOk = isValidDate(values.fechaNac);
+    const domicilioOk = String(values.domicilio || "").trim().length > 0;
+
+    if (!nombreOk) missing.push("Nombre");
+    if (!fechaOk) missing.push("Fecha de nacimiento");
+    if (!domicilioOk) missing.push("Dirección");
+    if (!familyRequired.ok) missing.push("Familiares (Nombre/Fecha)");
+
+    return { ok: missing.length === 0, missing };
+  }, [values.nombre, values.fechaNac, values.domicilio, familyRequired.ok]);
+
+  const canSubmit = requiredState.ok;
 
   useEffect(() => {
     const edad = calcAge(values.fechaNac);
@@ -328,6 +375,24 @@ export default function ClienteForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErr("");
+
+    // ✅ Bloqueo duro (no depende solo del disabled del botón)
+    if (!requiredState.ok) {
+      const famDetail = familyRequired.missing.length
+        ? " " +
+          familyRequired.missing
+            .map((x) => `Integrante #${x.idx + 1}: ${x.miss.join(" y ")}`)
+            .join(" · ")
+        : "";
+
+      setErr(
+        `Faltan campos obligatorios: ${requiredState.missing.join(
+          ", "
+        )}.${famDetail}`
+      );
+      return;
+    }
+
     try {
       const clip = (val, set, def) => (set.has(val) ? val : def);
       const n = (v, fb) => (v === "" || v == null ? fb : Number(v));
@@ -358,6 +423,7 @@ export default function ClienteForm() {
             ? values.provincia
             : "",
         nombre: values.nombre?.toString().trim().toUpperCase(),
+        domicilio: values.domicilio?.toString().trim(),
         integrantes: (values.integrantes || []).map((m) => ({
           ...m, // mantiene _id si viene, para upsert
           edad: n(m.edad, undefined),
@@ -371,6 +437,9 @@ export default function ClienteForm() {
               : "",
           cremacion: Boolean(m.cremacion),
           parcela: Boolean(m.parcela),
+          // ✅ normalizamos estado/baja por si vienen strings
+          activo: m?.activo !== false,
+          baja: m?.baja || null,
         })),
       };
 
@@ -443,7 +512,7 @@ export default function ClienteForm() {
           DOC_TIPOS={DOC_TIPOS}
           PROVINCIAS={PROVINCIAS}
           SEXO_OPTS={SEXO_OPTS}
-          pushIntegrante={pushIntegrante}
+          pushIntegrante={pushIntegrante} // ✅ ahora acepta seed
           updateIntegrante={updateIntegrante}
           removeIntegrante={removeIntegrante}
           onSummaryChange={setLocalGroupInfo} // nuevo: local summary solo en "nuevo"
@@ -487,8 +556,15 @@ export default function ClienteForm() {
             >
               Cancelar
             </Button>
+
             <Tooltip
-              title={!canSubmit ? "Completá los campos obligatorios" : ""}
+              title={
+                canSubmit
+                  ? ""
+                  : `Completá los campos obligatorios: ${requiredState.missing.join(
+                      ", "
+                    )}`
+              }
               disableHoverListener={canSubmit}
             >
               <span>

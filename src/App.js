@@ -91,7 +91,6 @@ function AppInner() {
             {/* ===== Privadas ===== */}
             <Route element={<ProtectedRoute />}>
               <Route path="/dashboard" element={<DashboardPage />} />
-
               <Route
                 path="/app/clientes"
                 element={

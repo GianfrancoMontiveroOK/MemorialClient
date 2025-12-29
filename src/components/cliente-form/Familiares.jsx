@@ -38,6 +38,12 @@ const normalizePhone = (s = "") => {
   if (d.startsWith("54")) return `+${d.replace(/^54/, "54 9 ")}`;
   return `+${d}`;
 };
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const isValidDate = (v) => {
+  if (!v) return false;
+  const t = new Date(String(v)).getTime();
+  return !Number.isNaN(t);
+};
 
 export default function Familiares({
   isEdit, // nuevo vs edición
@@ -74,8 +80,6 @@ export default function Familiares({
   const edadMax = edades.length ? Math.max(...edades) : 0;
 
   useEffect(() => {
-    // En "nuevo" usamos este summary para ProductoYPrecio (localGroupInfo).
-    // En "editar" ya viene __groupInfo desde el servidor, así que no hace falta.
     if (!isEdit) {
       onSummaryChange?.({ integrantesCount, cremacionesCount, edadMax });
     }
@@ -98,6 +102,58 @@ export default function Familiares({
   const onBlurProvincia = (idx, v) =>
     blur(idx, "provincia", v?.trim() ? v : "Mendoza");
 
+  const isInactiveMember = (m) => m?.activo === false || isValidDate(m?.baja);
+  const isMemberActive = (m) => !isInactiveMember(m);
+
+  const toggleActivo = (idx, checked) => {
+    // checked === true => activo
+    if (checked) {
+      updateIntegrante(idx, "activo", true);
+      updateIntegrante(idx, "baja", null);
+    } else {
+      updateIntegrante(idx, "activo", false);
+      // si ya tenía baja, la respetamos, si no, hoy
+      updateIntegrante(
+        idx,
+        "baja",
+        toDateInput(integrantes[idx]?.baja) || todayISO()
+      );
+    }
+  };
+
+  // ✅ Validación mínima por integrante activo: nombre + fechaNac
+  const memberRequired = useMemo(() => {
+    const byIdx = integrantes.map((m) => {
+      const active = isMemberActive(m);
+
+      const nombreOk = String(m?.nombre || "").trim().length > 0;
+      const fechaOk = isValidDate(m?.fechaNac);
+
+      const missingNombre = active && !nombreOk;
+      const missingFecha = active && !fechaOk;
+
+      return { active, missingNombre, missingFecha };
+    });
+
+    const hasErrors = byIdx.some((r) => r.missingNombre || r.missingFecha);
+
+    // para mostrar un resumen más claro
+    const errItems = byIdx
+      .map((r, idx) => {
+        if (!r.active) return null;
+        const miss = [];
+        if (r.missingNombre) miss.push("Nombre");
+        if (r.missingFecha) miss.push("Fecha nac.");
+        return miss.length
+          ? `Integrante #${idx + 1}: ${miss.join(" y ")}`
+          : null;
+      })
+      .filter(Boolean);
+
+    return { byIdx, hasErrors, errItems };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [integrantes]);
+
   return (
     <>
       <Stack
@@ -114,19 +170,63 @@ export default function Familiares({
       <Divider sx={{ mb: 2 }} />
 
       <Stack spacing={2}>
+        {memberRequired.hasErrors ? (
+          <Alert severity="error">
+            Hay integrantes <b>activos</b> incompletos. Mínimo obligatorio:
+            <b> Nombre</b> y <b>Fecha de nacimiento</b>.
+            {memberRequired.errItems.length ? (
+              <>
+                <br />
+                {memberRequired.errItems.join(" · ")}
+              </>
+            ) : null}
+          </Alert>
+        ) : null}
+
         {integrantes.map((m, idx) => {
           const key = m._id || m._tempId || idx;
+          const active = isMemberActive(m);
+
+          const req = memberRequired.byIdx[idx] || {
+            active,
+            missingNombre: false,
+            missingFecha: false,
+          };
+
           return (
-            <Paper key={key} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+            <Paper
+              key={key}
+              variant="outlined"
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                opacity: active ? 1 : 0.65,
+              }}
+            >
               <Stack
                 direction="row"
                 alignItems="center"
                 justifyContent="space-between"
                 mb={1}
               >
-                <Typography variant="subtitle1" fontWeight={700}>
-                  Integrante #{idx + 1}
-                </Typography>
+                <Stack direction="row" alignItems="center" spacing={2}>
+                  <Typography variant="subtitle1" fontWeight={700}>
+                    Integrante #{idx + 1}
+                  </Typography>
+
+                  {/* ✅ Switch Activo / Baja */}
+                  <FormControlLabel
+                    sx={{ ml: 0 }}
+                    control={
+                      <Switch
+                        checked={active}
+                        onChange={(e) => toggleActivo(idx, e.target.checked)}
+                      />
+                    }
+                    label={active ? "Activo" : "Baja"}
+                  />
+                </Stack>
+
                 <Button
                   size="small"
                   variant="cancel"
@@ -140,13 +240,16 @@ export default function Familiares({
                 {/* Identificación */}
                 <Grid item xs={12} md={6}>
                   <TextField
-                    label="Nombre"
+                    label="Nombre *"
                     value={m.nombre || ""}
                     onChange={(e) =>
                       updateIntegrante(idx, "nombre", e.target.value)
                     }
                     onBlur={(e) => onBlurNombre(idx, e.target.value)}
                     fullWidth
+                    disabled={!active}
+                    error={req.missingNombre}
+                    helperText={req.missingNombre ? "Obligatorio" : " "}
                   />
                 </Grid>
                 <Grid item xs={6} md={3}>
@@ -158,6 +261,7 @@ export default function Familiares({
                       updateIntegrante(idx, "docTipo", e.target.value)
                     }
                     fullWidth
+                    disabled={!active}
                   >
                     {DOC_TIPOS.map((t) => (
                       <MenuItem key={t} value={t}>
@@ -177,13 +281,14 @@ export default function Familiares({
                       onBlurDocumento(idx, e.target.value, m.docTipo || "DNI")
                     }
                     fullWidth
+                    disabled={!active}
                   />
                 </Grid>
 
                 {/* Datos personales */}
                 <Grid item xs={12} md={3}>
                   <TextField
-                    label="Fecha de nacimiento"
+                    label="Fecha de nacimiento *"
                     type="date"
                     value={toDateInput(m.fechaNac)}
                     onChange={(e) => {
@@ -193,6 +298,9 @@ export default function Familiares({
                     }}
                     fullWidth
                     InputLabelProps={{ shrink: true }}
+                    disabled={!active}
+                    error={req.missingFecha}
+                    helperText={req.missingFecha ? "Obligatorio" : " "}
                   />
                 </Grid>
                 <Grid item xs={6} md={2}>
@@ -214,6 +322,7 @@ export default function Familiares({
                       updateIntegrante(idx, "sexo", e.target.value)
                     }
                     fullWidth
+                    disabled={!active}
                   >
                     {SEXO_OPTS.map((s) => (
                       <MenuItem key={s} value={s}>
@@ -231,6 +340,7 @@ export default function Familiares({
                     }
                     fullWidth
                     placeholder="27-XXXXXXXX-X"
+                    disabled={!active}
                   />
                 </Grid>
 
@@ -245,6 +355,7 @@ export default function Familiares({
                     onBlur={(e) => onBlurTelefono(idx, e.target.value)}
                     fullWidth
                     placeholder="+54 9 ..."
+                    disabled={!active}
                   />
                 </Grid>
                 <Grid item xs={12} md={4}>
@@ -256,6 +367,7 @@ export default function Familiares({
                     }
                     onBlur={(e) => onBlurDomicilio(idx, e.target.value)}
                     fullWidth
+                    disabled={!active}
                   />
                 </Grid>
                 <Grid item xs={6} md={3}>
@@ -267,6 +379,7 @@ export default function Familiares({
                     }
                     onBlur={(e) => onBlurCiudad(idx, e.target.value)}
                     fullWidth
+                    disabled={!active}
                   />
                 </Grid>
                 <Grid item xs={6} md={3}>
@@ -279,6 +392,7 @@ export default function Familiares({
                     }
                     onBlur={(e) => onBlurProvincia(idx, e.target.value)}
                     fullWidth
+                    disabled={!active}
                   >
                     {PROVINCIAS.map((p) => (
                       <MenuItem key={p} value={p}>
@@ -295,6 +409,7 @@ export default function Familiares({
                       updateIntegrante(idx, "cp", e.target.value)
                     }
                     fullWidth
+                    disabled={!active}
                   />
                 </Grid>
 
@@ -307,6 +422,7 @@ export default function Familiares({
                         onChange={(e) =>
                           updateIntegrante(idx, "cremacion", e.target.checked)
                         }
+                        disabled={!active}
                       />
                     }
                     label="Cremación"
@@ -320,6 +436,7 @@ export default function Familiares({
                         onChange={(e) =>
                           updateIntegrante(idx, "parcela", e.target.checked)
                         }
+                        disabled={!active}
                       />
                     }
                     label="Parcela"
@@ -337,22 +454,55 @@ export default function Familiares({
                     fullWidth
                     multiline
                     minRows={2}
+                    disabled={!active}
                   />
                 </Grid>
+
+                {/* (Opcional) mostrar baja cuando está inactivo */}
+                {!active ? (
+                  <Grid item xs={12}>
+                    <Alert severity="warning" sx={{ mt: 0.5 }}>
+                      Este integrante está en <b>baja</b>
+                      {toDateInput(m.baja) ? (
+                        <>
+                          {" "}
+                          desde <b>{toDateInput(m.baja)}</b>
+                        </>
+                      ) : null}
+                      . Podés reactivarlo con el switch.
+                    </Alert>
+                  </Grid>
+                ) : null}
               </Grid>
             </Paper>
           );
         })}
 
-        <Button variant="brandYellow" onClick={pushIntegrante}>
+        <Button
+          variant="brandYellow"
+          onClick={() => {
+            // ✅ defaults para el nuevo familiar
+            pushIntegrante({
+              activo: true,
+              baja: null,
+              docTipo: "DNI",
+              sexo: "X",
+              provincia: "Mendoza",
+              cremacion: false,
+              parcela: false,
+            });
+          }}
+        >
           + Agregar familiar
         </Button>
 
         <Alert severity="info">
           Los familiares se crean como registros independientes que{" "}
           <b>comparten el mismo N° de cliente</b>. La <b>cuota ideal</b> del
-          grupo se recalcula automáticamente al guardar (y verás un preview en
-          la sección de precio).
+          grupo se recalcula automáticamente al guardar.
+          <br />
+          Ahora podés <b>dar de baja/reactivar</b> a cada integrante con su
+          switch (sin eliminar el grupo).
         </Alert>
       </Stack>
     </>
