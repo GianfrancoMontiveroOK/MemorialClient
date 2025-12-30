@@ -49,16 +49,13 @@ export default function BoxFilters({
           <MenuItem value="debit">Ingresos</MenuItem>
           <MenuItem value="credit">Egresos</MenuItem>
         </TextField>
-        <TextField
-          size="small"
-          label="Códigos de cuenta (A,B,C)"
-          placeholder="ej: CAJA_COBRADOR,A_RENDIR_COBRADOR"
-          value={accountCodes}
-          onChange={(e) => setAccountCodes(e.target.value)}
-          sx={{ minWidth: 260 }}
+
+        <Button
+          variant="brandYellow"
+          onClick={onApply}
           disabled={disabled}
-        />
-        <Button variant="brandYellow" onClick={onApply} disabled={disabled} sx={{ minWidth: 90 }}>
+          sx={{ minWidth: 90 }}
+        >
           Aplicar
         </Button>
       </Stack>

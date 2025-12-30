@@ -273,13 +273,6 @@ export default function UsuariosPanel({
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
           <TextField
             size="small"
-            label="Buscar por ID"
-            value={byId}
-            onChange={(e) => setById(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-          />
-          <TextField
-            size="small"
             label="Buscar por email"
             value={byEmail}
             onChange={(e) => setByEmail(e.target.value)}

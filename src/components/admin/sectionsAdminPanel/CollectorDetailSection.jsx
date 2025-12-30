@@ -19,7 +19,6 @@ import {
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 
-
 import {
   CollectorDetailLayout,
   BoxFilters,
@@ -39,6 +38,18 @@ import {
   listArqueoUsuarioClientes,
   downloadArqueoUsuarioClientesCSV,
 } from "../../../api/arqueos";
+
+/* ===================== Debounce helper ===================== */
+function useDebouncedValue(value, delay = 350) {
+  const [debounced, setDebounced] = React.useState(value);
+
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+
+  return debounced;
+}
 
 export default function CollectorDetailSection({
   user, // { userId, name, email, role, porcentajeCobrador? }
@@ -88,6 +99,9 @@ export default function CollectorDetailSection({
   const [cliSortBy, setCliSortBy] = React.useState("createdAt");
   const [cliSortDir, setCliSortDir] = React.useState("desc");
 
+  // ✅ debounce (evita request por tecla)
+  const debouncedCliQ = useDebouncedValue(cliQ, 350);
+
   // feedback general
   const [toast, setToast] = React.useState({
     open: false,
@@ -128,6 +142,7 @@ export default function CollectorDetailSection({
         side: sideFilter || undefined,
         accountCodes: accountCodes || undefined,
       });
+
       const data = res?.data || {};
       const items = data?.items || [];
       const totalsApi = data?.totals;
@@ -207,7 +222,7 @@ export default function CollectorDetailSection({
         userId,
         page: cliPage + 1,
         limit: cliLimit,
-        q: cliQ || undefined,
+        q: debouncedCliQ || undefined, // ✅ debounce acá
         sortBy: cliSortBy,
         sortDir: cliSortDir,
       });
@@ -227,7 +242,21 @@ export default function CollectorDetailSection({
     } finally {
       setCliLoading(false);
     }
-  }, [userIdOk, userId, cliPage, cliLimit, cliQ, cliSortBy, cliSortDir]);
+  }, [
+    userIdOk,
+    userId,
+    cliPage,
+    cliLimit,
+    debouncedCliQ,
+    cliSortBy,
+    cliSortDir,
+  ]);
+
+  // ✅ al escribir búsqueda, resetea página (pero NO fuerza request inmediato)
+  React.useEffect(() => {
+    if (tab !== "clientes") return;
+    setCliPage(0);
+  }, [cliQ, tab]);
 
   // ── Exportar TODOS los clientes (FULL) desde backend
   const exportAllClientsCSV = React.useCallback(async () => {
@@ -239,7 +268,7 @@ export default function CollectorDetailSection({
         sortBy: cliSortBy,
         sortDir: cliSortDir,
         full: true,
-        filename: `clientes_cobrador_${userId}_${new Date()
+        fileName: `clientes_cobrador_${userId}_${new Date()
           .toISOString()
           .slice(0, 10)}.csv`,
       });
@@ -256,7 +285,7 @@ export default function CollectorDetailSection({
     }
   }, [userIdOk, userId, cliQ, cliSortBy, cliSortDir]);
 
-  // primer disparo
+  // primer disparo (cuando ya hay userIdOk)
   React.useEffect(() => {
     if (!userIdOk) return;
     if (tab === "caja") reloadCash();
@@ -265,7 +294,7 @@ export default function CollectorDetailSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userIdOk]);
 
-  // recargas por cambios
+  // recargas por cambios (✅ usa debouncedCliQ, NO cliQ)
   React.useEffect(() => {
     if (!userIdOk) return;
     if (tab === "caja") reloadCash();
@@ -284,7 +313,7 @@ export default function CollectorDetailSection({
     payLimit,
     cliPage,
     cliLimit,
-    cliQ,
+    debouncedCliQ, // ✅ clave
     cliSortBy,
     cliSortDir,
   ]);
@@ -330,6 +359,7 @@ export default function CollectorDetailSection({
         r.map((c) => `"${String(c ?? "").replaceAll('"', '""')}"`).join(",")
       )
       .join("\n");
+
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -346,10 +376,9 @@ export default function CollectorDetailSection({
 
   const anyLoading = cashLoading || payLoading || cliLoading;
 
-  // Abrir modal (esto se dispara desde el botón en el header)
+  // Abrir modal
   const onArquearCaja = () => {
     if (!userIdOk) return;
-    // aseguramos que el resumen esté actualizado antes de confirmar
     if (tab === "caja") reloadCash();
     setArqueoNote("");
     setArqueoOpen(true);
@@ -389,14 +418,14 @@ export default function CollectorDetailSection({
     }
   };
 
-  const periodLabel = () => {
+  const periodLabel = React.useCallback(() => {
     const from = (dateFrom || "").trim();
     const to = (dateTo || "").trim();
     if (!from && !to) return "Sin filtro de fechas";
     if (from && to) return `${from} → ${to}`;
     if (from) return `Desde ${from}`;
     return `Hasta ${to}`;
-  };
+  }, [dateFrom, dateTo]);
 
   return (
     <>
@@ -412,7 +441,7 @@ export default function CollectorDetailSection({
           else reloadClients();
         }}
         onExport={onExportTop}
-        onArquearCaja={onArquearCaja} // ✅ ahora abre modal
+        onArquearCaja={onArquearCaja}
         toast={toast}
         setToast={setToast}
       >
@@ -429,7 +458,6 @@ export default function CollectorDetailSection({
               accountCodes={accountCodes}
               setAccountCodes={setAccountCodes}
               onApply={applyFilters}
-              disabled={anyLoading}
             />
           </Box>
         )}
@@ -545,7 +573,12 @@ export default function CollectorDetailSection({
 
         <DialogContent dividers>
           <Stack spacing={1.25}>
-            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              flexWrap="wrap"
+            >
               <Typography variant="body2" color="text.secondary">
                 Cobrador:
               </Typography>
@@ -572,7 +605,9 @@ export default function CollectorDetailSection({
                   <Typography variant="caption" color="text.secondary">
                     Ingresos
                   </Typography>
-                  <Typography variant="h6">{fmtMoney(cashTotals.debits)}</Typography>
+                  <Typography variant="h6">
+                    {fmtMoney(cashTotals.debits)}
+                  </Typography>
                 </Stack>
               </Grid>
               <Grid item xs={12} sm={4}>
@@ -580,7 +615,9 @@ export default function CollectorDetailSection({
                   <Typography variant="caption" color="text.secondary">
                     Egresos
                   </Typography>
-                  <Typography variant="h6">{fmtMoney(cashTotals.credits)}</Typography>
+                  <Typography variant="h6">
+                    {fmtMoney(cashTotals.credits)}
+                  </Typography>
                 </Stack>
               </Grid>
               <Grid item xs={12} sm={4}>
@@ -588,7 +625,9 @@ export default function CollectorDetailSection({
                   <Typography variant="caption" color="text.secondary">
                     Saldo (a contabilizar)
                   </Typography>
-                  <Typography variant="h6">{fmtMoney(cashTotals.balance)}</Typography>
+                  <Typography variant="h6">
+                    {fmtMoney(cashTotals.balance)}
+                  </Typography>
                 </Stack>
               </Grid>
             </Grid>
@@ -636,4 +675,3 @@ export default function CollectorDetailSection({
     </>
   );
 }
-

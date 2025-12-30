@@ -1,3 +1,4 @@
+// src/components/admin/sectionsAdminPanel/ClientsFilters.jsx
 import * as React from "react";
 import {
   Paper,
@@ -8,6 +9,8 @@ import {
   IconButton,
   Tooltip,
   Box,
+  InputAdornment,
+  CircularProgress,
 } from "@mui/material";
 import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
 import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
@@ -20,21 +23,32 @@ export default function ClientsFilters({
   sortDir,
   setSortDir,
   onApply,
-  disabled,
+  loading, // 👈 renombralo para que sea claro
 }) {
   const isAsc = sortDir === "asc";
   const isDesc = sortDir === "desc";
 
   return (
     <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, mb: 1.25 }}>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems="center">
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1}
+        alignItems="center"
+      >
         <TextField
           size="small"
           label="Buscar (nombre, domicilio, id)"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           sx={{ minWidth: 260 }}
-          disabled={disabled}
+          disabled={false} // ✅ nunca deshabilitar para no perder foco
+          InputProps={{
+            endAdornment: loading ? (
+              <InputAdornment position="end">
+                <CircularProgress size={16} />
+              </InputAdornment>
+            ) : null,
+          }}
         />
 
         <TextField
@@ -44,7 +58,7 @@ export default function ClientsFilters({
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
           sx={{ minWidth: 180 }}
-          disabled={disabled}
+          disabled={loading}
         >
           {[
             "createdAt",
@@ -61,7 +75,6 @@ export default function ClientsFilters({
           ))}
         </TextField>
 
-        {/* Dirección: botones de flechas */}
         <Box
           sx={{
             display: "flex",
@@ -78,11 +91,9 @@ export default function ClientsFilters({
               <IconButton
                 size="small"
                 onClick={() => setSortDir("asc")}
-                disabled={disabled}
+                disabled={loading}
                 color={isAsc ? "primary" : "default"}
-                sx={{
-                  bgcolor: isAsc ? "action.selected" : "transparent",
-                }}
+                sx={{ bgcolor: isAsc ? "action.selected" : "transparent" }}
               >
                 <ArrowUpwardRoundedIcon fontSize="small" />
               </IconButton>
@@ -94,11 +105,9 @@ export default function ClientsFilters({
               <IconButton
                 size="small"
                 onClick={() => setSortDir("desc")}
-                disabled={disabled}
+                disabled={loading}
                 color={isDesc ? "primary" : "default"}
-                sx={{
-                  bgcolor: isDesc ? "action.selected" : "transparent",
-                }}
+                sx={{ bgcolor: isDesc ? "action.selected" : "transparent" }}
               >
                 <ArrowDownwardRoundedIcon fontSize="small" />
               </IconButton>
@@ -106,7 +115,7 @@ export default function ClientsFilters({
           </Tooltip>
         </Box>
 
-        <Button variant="brandYellow" onClick={onApply} disabled={disabled}>
+        <Button variant="brandYellow" onClick={onApply} disabled={loading}>
           Aplicar
         </Button>
       </Stack>

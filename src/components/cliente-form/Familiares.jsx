@@ -227,13 +227,19 @@ export default function Familiares({
                   />
                 </Stack>
 
-                <Button
-                  size="small"
-                  variant="cancel"
-                  onClick={() => removeIntegrante(idx)}
-                >
-                  Quitar
-                </Button>
+                {active && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    onClick={() => {
+                      updateIntegrante(idx, "activo", false);
+                      updateIntegrante(idx, "baja", todayISO());
+                    }}
+                  >
+                    Dar de baja
+                  </Button>
+                )}
               </Stack>
 
               <Grid container spacing={2} justifyContent="center">

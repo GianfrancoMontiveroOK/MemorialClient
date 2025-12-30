@@ -12,6 +12,7 @@ import {
   MenuItem,
   Pagination,
   Box,
+  TableContainer,
 } from "@mui/material";
 import { fmtMoney, fmtDateTime } from "./utils";
 
@@ -28,43 +29,57 @@ export default function CashTable({
 }) {
   return (
     <Paper variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell>Tipo/Lado</TableCell>
-            <TableCell>Concepto</TableCell>
-            <TableCell>Cuenta</TableCell>
-            <TableCell align="right">Monto</TableCell>
-            <TableCell>Fecha</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {!items || items.length === 0 ? (
+      {/* ✅ Contenedor scrolleable horizontal */}
+      <TableContainer
+        sx={{
+          width: "100%",
+          overflowX: "auto",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        <Table
+          size="small"
+          sx={{
+            minWidth: 720, // ✅ fuerza scroll en mobile si no entra
+            "& th, & td": { whiteSpace: "nowrap" }, // ✅ evita que se rompa feo el layout
+          }}
+        >
+          <TableHead>
             <TableRow>
-              <TableCell colSpan={5}>
-                <Box py={3} textAlign="center" color="text.secondary">
-                  {loading ? "Cargando…" : "Sin movimientos"}
-                </Box>
-              </TableCell>
+              <TableCell>Tipo/Lado</TableCell>
+              <TableCell>Cuenta</TableCell>
+              <TableCell align="right">Monto</TableCell>
+              <TableCell>Fecha</TableCell>
             </TableRow>
-          ) : (
-            items.map((m) => (
-              <TableRow
-                key={m._id || `${m.postedAt}-${m.amount}-${Math.random()}`}
-              >
-                <TableCell>{m.type || m.side || "—"}</TableCell>
-                <TableCell>
-                  {m.concept || m.memo || m.description || "—"}
+          </TableHead>
+
+          <TableBody>
+            {!items || items.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <Box py={3} textAlign="center" color="text.secondary">
+                    {loading ? "Cargando…" : "Sin movimientos"}
+                  </Box>
                 </TableCell>
-                <TableCell>{m.accountCode || "—"}</TableCell>
-                <TableCell align="right">{fmtMoney(m.amount)}</TableCell>
-                <TableCell>{fmtDateTime(m.postedAt || m.at)}</TableCell>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+            ) : (
+              items.map((m) => (
+                <TableRow
+                  key={m._id || `${m.postedAt}-${m.amount}-${Math.random()}`}
+                >
+                  <TableCell>{m.type || m.side || "—"}</TableCell>
+                  <TableCell>{m.accountCode || "—"}</TableCell>
+                  <TableCell align="right">{fmtMoney(m.amount)}</TableCell>
+                  <TableCell>{fmtDateTime(m.postedAt || m.at)}</TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
       <Divider />
+
       <Stack
         direction={{ xs: "column", sm: "row" }}
         alignItems={{ xs: "flex-start", sm: "center" }}
@@ -91,6 +106,7 @@ export default function CashTable({
             </MenuItem>
           ))}
         </TextField>
+
         <Pagination
           color="primary"
           page={page + 1}

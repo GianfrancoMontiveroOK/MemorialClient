@@ -288,20 +288,7 @@ export default function ArqueosSection({ onOpenCollectorDetail }) {
               ),
             }}
           />
-          <TextField
-            size="small"
-            select
-            label="Rol"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            sx={{ minWidth: 180 }}
-          >
-            {ROLE_OPTIONS.map((opt) => (
-              <MenuItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </MenuItem>
-            ))}
-          </TextField>
+
           <TextField
             size="small"
             type="date"
