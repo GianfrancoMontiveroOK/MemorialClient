@@ -10,7 +10,7 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import GroupIcon from "@mui/icons-material/Group";
 import LocalAtmIcon from "@mui/icons-material/LocalAtm";
-import { fmtMoney } from "./utils";
+import { fmtMoney } from "./utils"; 
 
 export default function ClientHeader({
   loading,

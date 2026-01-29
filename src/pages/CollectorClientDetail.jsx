@@ -22,7 +22,7 @@ import {
   MapCard,
   buildAddress,
   fmtMoney,
-} from "../components/collectorClientDetail";
+} from "../components/collectorClientDetail"; 
 
 export default function CollectorClientDetail() {
   const { id } = useParams();

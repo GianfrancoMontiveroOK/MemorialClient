@@ -1,4 +1,4 @@
-// src/api/clientes.js
+ // src/api/clientes.js
 import axios from "./axios";
 
 // Helpers
@@ -6,7 +6,7 @@ const toInt = (v, def) => {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : def;
 };
-
+ 
 const normSortDir = (v) => (String(v).toLowerCase() === "asc" ? "asc" : "desc");
 
 export const listClientes = (params = {}) => {

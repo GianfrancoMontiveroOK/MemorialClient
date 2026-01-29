@@ -1,3 +1,4 @@
+// src/context/SettingsContext.jsx
 import React, {
   createContext,
   useCallback,
@@ -6,19 +7,22 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { fetchPriceRules, savePriceRules } from "../api/settings";
+
+import {
+  fetchPriceRules,
+  savePriceRules,
+  importClientsDatabaseXlsx, // import normal (axios)
+} from "../api/settings";
 
 const SettingsContext = createContext(null);
 export const useSettings = () => useContext(SettingsContext);
 
 /* ================== Normalización & Validación ================== */
-/** Convierte cualquier valor a número finito, o devuelve fallback */
 const num = (v, fb = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fb;
 };
 
-/** Convierte minMap { "1": "0.75", 2: 1 } → {1:0.75,2:1} con claves numéricas reales */
 function normalizeMinMap(map) {
   const out = {};
   if (!map || typeof map !== "object") return out;
@@ -29,20 +33,18 @@ function normalizeMinMap(map) {
   return out;
 }
 
-/** Ordena tiers por min DESC y fuerza números: [{min, coef}] */
 function normalizeAgeTiers(age) {
   const arr = Array.isArray(age) ? age : [];
   const norm = arr
     .map((t) => ({ min: num(t?.min, 0), coef: num(t?.coef, 1) }))
     .sort((a, b) => (b.min ?? 0) - (a.min ?? 0));
-  // elimina duplicados por `min` quedándote con el primero (ya está descendente)
+
   const seen = new Set();
   return norm.filter((t) =>
     seen.has(t.min) ? false : (seen.add(t.min), true)
   );
 }
 
-/** Normaliza todo el objeto de rules del backend */
 function normalizePriceRules(rules) {
   const r = rules ?? {};
   const group = r.group ?? {};
@@ -58,7 +60,6 @@ function normalizePriceRules(rules) {
   };
 }
 
-/** Chequeo básico de integridad para evitar previews 0 por shape raro */
 function validatePriceRules(r) {
   const problems = [];
   if (!(r && typeof r === "object")) problems.push("rules vacío");
@@ -74,18 +75,14 @@ function validatePriceRules(r) {
 }
 /* ================================================================ */
 
-/**
- * Contexto EXCLUSIVO para price rules del backend.
- * - GET  /api/settings/price-rules
- * - PUT  /api/settings/price-rules
- * - Cache TTL 60s y guardia StrictMode
- */
 export const SettingsProvider = ({ children }) => {
   const [priceRules, setPriceRules] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
-  // anti-doble-fetch (StrictMode) + cache TTL
+  const [lastLoadedAt, setLastLoadedAt] = useState(null);
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+
   const fetchedRef = useRef(false);
   const cacheAtRef = useRef(0);
   const TTL_MS = 60_000;
@@ -99,20 +96,16 @@ export const SettingsProvider = ({ children }) => {
       setLoading(true);
       setErr("");
       try {
-        const raw = await fetchPriceRules(); // ← debe devolver lo que responde el endpoint
+        const raw = await fetchPriceRules();
         const normalized = normalizePriceRules(raw);
         const { ok, problems } = validatePriceRules(normalized);
 
-        if (!ok) {
-          const msg = `Price rules incompletas: ${problems.join(", ")}`;
-          setErr(msg);
-          // igualmente exponemos lo normalizado para que la UI pueda mostrar algo,
-          // pero el cálculo quedará en 0 si base=0, etc.
-        }
+        if (!ok) setErr(`Price rules incompletas: ${problems.join(", ")}`);
 
         setPriceRules(normalized);
         fetchedRef.current = true;
         cacheAtRef.current = Date.now();
+        setLastLoadedAt(new Date().toISOString());
         return normalized;
       } catch (e) {
         const msg =
@@ -130,28 +123,27 @@ export const SettingsProvider = ({ children }) => {
   );
 
   useEffect(() => {
-    if (!fetchedRef.current) {
-      load().catch(() => {});
-    }
+    if (!fetchedRef.current) load().catch(() => {});
   }, [load]);
 
   const save = useCallback(async (nextRulesObject) => {
     setLoading(true);
     setErr("");
     try {
-      // Acepta { priceRules: {...} } o directamente {...}
       const savedRaw = await savePriceRules(nextRulesObject);
       const normalized = normalizePriceRules(savedRaw);
       const { ok, problems } = validatePriceRules(normalized);
+
       if (!ok) {
-        const msg = `Price rules guardadas con advertencias: ${problems.join(
-          ", "
-        )}`;
-        setErr(msg);
+        setErr(
+          `Price rules guardadas con advertencias: ${problems.join(", ")}`
+        );
       }
+
       setPriceRules(normalized);
       fetchedRef.current = true;
       cacheAtRef.current = Date.now();
+      setLastSavedAt(new Date().toISOString());
       return normalized;
     } catch (e) {
       const msg =
@@ -165,14 +157,71 @@ export const SettingsProvider = ({ children }) => {
     }
   }, []);
 
+  /**
+   * ✅ Importar base (NORMAL / axios)
+   * - Progreso solo de upload (onProgress)
+   * - Sin stream
+   * - Devuelve siempre JSON (data)
+   */
+  const importClientsDbXlsx = useCallback(
+    async ({
+      clientes,
+      grupos,
+      nacion,
+      replace = false,
+      stopOnError = true,
+      onProgress,
+      signal,
+    } = {}) => {
+      setErr("");
+      try {
+        if (!clientes || !grupos || !nacion) {
+          const e = new Error(
+            "Faltan archivos: se requieren clientes, grupos y nacion (XLS/XLSX)."
+          );
+          e.code = "MISSING_FILES";
+          throw e;
+        }
+
+        // ⚠️ Compat: por si tu API vieja devolvía axios response
+        const resp = await importClientsDatabaseXlsx({
+          clientes,
+          grupos,
+          nacion,
+          replace,
+          stopOnError,
+          onProgress,
+          signal,
+        });
+
+        const data = resp?.data ?? resp; // soporta ambos
+        return data;
+      } catch (e) {
+        const msg =
+          e?.response?.data?.message ||
+          e?.message ||
+          "No se pudo importar la base de datos";
+        setErr(msg);
+        throw e;
+      }
+    },
+    []
+  );
+
   return (
     <SettingsContext.Provider
       value={{
-        priceRules, // siempre normalizadas
+        priceRules,
         loading,
-        err, // si hay shape raro lo verás acá
+        err,
         reload: () => load({ force: true }),
         save,
+        hasRemote: !!priceRules,
+        lastLoadedAt,
+        lastSavedAt,
+
+        // import db
+        importClientsDbXlsx,
       }}
     >
       {children}

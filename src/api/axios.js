@@ -4,7 +4,7 @@ import axios from "axios";
 const baseURL =
   process.env.NODE_ENV === "production"
     ? "https://www.api.memorialsanrafael.com.ar/api" // URL para producción
-    : "http://localhost:4000/api"; // URL para desarrollo
+    : "http://localhost:4001/api"; // URL para desarrollo
 
 const instance = axios.create({
   baseURL,

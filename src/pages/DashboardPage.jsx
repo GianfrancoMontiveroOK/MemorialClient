@@ -16,7 +16,7 @@ import {
 import AdminPanel from "../components/AdminPanel";
 import SuperAdminPanel from "../components/SuperAdminPanel";
 import CollectorPanel from "../components/CollectorPanel";
-
+ 
 export default function DashboardPage() {
   // Estos vienen dados por los providers globales que ya montás en App.jsx (AuthProvider + DashboardProvider)
   const { user } = useAuth();
